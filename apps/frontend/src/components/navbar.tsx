@@ -19,7 +19,7 @@ export async function Navbar() {
           {session ? (
             <>
               <Button asChild variant="ghost" size="sm">
-                <Link href="/todos">Todos</Link>
+                <Link href="/lobby">Lobby</Link>
               </Button>
               <SignOutButton />
             </>

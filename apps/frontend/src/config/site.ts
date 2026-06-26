@@ -1,9 +1,11 @@
 export const siteConfig = {
-  name: 'Mono Repo',
-  navName: 'Mono Repo',
-  metadataTitle: 'Mono Repo - Neural substrate access',
-  metadataDescription: 'Minimalist futuristic auth experience for Mono Repo.',
-  loginDescription: 'Sign in to Mono Repo to access the neural substrate.',
-  signupDescription: 'Create your Mono Repo account and initialize your decentralized identity.',
-  emailPlaceholder: 'name@monorepo.dev',
+  name: 'Games of the General',
+  navName: 'GOTG',
+  metadataTitle: 'Games of the General - Online strategy board game',
+  metadataDescription:
+    'Play Games of the General online: arrange hidden ranks, outmaneuver spies, and capture the opposing flag.',
+  loginDescription: 'Sign in to continue your Games of the General matches.',
+  signupDescription:
+    'Create a Games of the General account and start building your command profile.',
+  emailPlaceholder: 'commander@example.com',
 } as const;
