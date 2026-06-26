@@ -9,12 +9,12 @@ type OAuthButtonsProps = {
   callbackUrl?: string;
 };
 
-export function OAuthButtons({ callbackUrl = '/todos' }: OAuthButtonsProps) {
+export function OAuthButtons({ callbackUrl = '/lobby' }: OAuthButtonsProps) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <button
         type="button"
-        className="group flex items-center justify-center gap-2 rounded-lg border border-border bg-foreground/5 py-2 transition-all duration-300 hover:border-accent/40 hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
+        className="group flex items-center justify-center gap-2 rounded-lg border border-[#8a7b62]/25 bg-white/40 py-2 transition-all duration-300 hover:border-[#8f2f24]/40 hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-[#d7bd73]/35 dark:hover:bg-white/10"
         disabled={!callbackUrl}
         onClick={() => void signIn(authProviders.google, { redirectTo: callbackUrl })}
       >
@@ -23,7 +23,7 @@ export function OAuthButtons({ callbackUrl = '/todos' }: OAuthButtonsProps) {
       </button>
       <button
         type="button"
-        className="group flex items-center justify-center gap-2 rounded-lg border border-border bg-foreground/5 py-2 transition-all duration-300 hover:border-accent/40 hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
+        className="group flex items-center justify-center gap-2 rounded-lg border border-[#8a7b62]/25 bg-white/40 py-2 transition-all duration-300 hover:border-[#8f2f24]/40 hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-[#d7bd73]/35 dark:hover:bg-white/10"
         disabled={!callbackUrl}
         onClick={() => void signIn(authProviders.github, { redirectTo: callbackUrl })}
       >

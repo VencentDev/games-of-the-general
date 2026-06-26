@@ -18,25 +18,24 @@ export function SignupPageContent() {
 
 function SignupContent() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') ?? '/todos';
+  const callbackUrl = searchParams.get('callbackUrl') ?? '/lobby';
 
   return <SignupShell callbackUrl={callbackUrl} />;
 }
 
 function SignupShell({ callbackUrl }: { callbackUrl?: string }) {
   return (
-    <main className="relative -mx-4 -my-6 flex min-h-[calc(100svh-3.5rem)] max-w-[100vw] items-center overflow-x-clip overflow-y-hidden bg-background px-4 py-6 text-foreground selection:bg-accent-alt/30 md:py-8">
-      <BackgroundOrbs />
-      <section className="relative z-10 mx-auto flex min-h-[560px] w-full max-w-[min(56rem,calc(100vw-2rem))] animate-float-in flex-col-reverse overflow-hidden rounded-xl border border-border bg-card shadow-2xl md:flex-row">
+    <main className="relative -mx-4 -my-6 flex min-h-[calc(100svh-3.5rem)] max-w-[100vw] items-center overflow-x-clip bg-[#f5f1e6] px-4 py-6 text-[#201b16] selection:bg-[#d7bd73]/40 dark:bg-[#11130f] dark:text-[#f6f0e4] md:py-8">
+      <section className="relative z-10 mx-auto flex min-h-[560px] w-full max-w-[min(58rem,calc(100vw-2rem))] animate-float-in flex-col-reverse overflow-hidden rounded-xl border border-[#8a7b62]/25 bg-[#fbf8ef] shadow-2xl shadow-black/10 dark:border-white/10 dark:bg-[#181b15] md:flex-row">
         <div className="flex flex-1 items-center p-8 md:p-12">
           <form className="w-full space-y-6" onSubmit={(event) => event.preventDefault()}>
             <div className="space-y-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-accent-alt">
-                Identity seed
+              <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#8f2f24] dark:text-[#f29a7f]">
+                New commander
               </p>
               <h1 className="text-3xl font-bold tracking-tight">Create account</h1>
-              <p className="text-sm text-muted-foreground">
-                Initialize a local profile or continue through your provider identity.
+              <p className="text-sm leading-6 text-[#655c51] dark:text-[#c9c1b4]">
+                Save your profile, track future matches, and prepare your first hidden formation.
               </p>
             </div>
 
@@ -45,13 +44,13 @@ function SignupShell({ callbackUrl }: { callbackUrl?: string }) {
                 <Field
                   id="first-name"
                   label="First Name"
-                  placeholder="John"
+                  placeholder="Maria"
                   autoComplete="given-name"
                 />
                 <Field
                   id="last-name"
                   label="Last Name"
-                  placeholder="Doe"
+                  placeholder="Santos"
                   autoComplete="family-name"
                 />
               </div>
@@ -59,22 +58,22 @@ function SignupShell({ callbackUrl }: { callbackUrl?: string }) {
                 id="signup-email"
                 label="Email"
                 type="email"
-                placeholder="hello@world.com"
+                placeholder={siteConfig.emailPlaceholder}
                 autoComplete="email"
               />
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   id="signup-password"
-                  label="Secret"
+                  label="Password"
                   type="password"
-                  placeholder="••••"
+                  placeholder="••••••••"
                   autoComplete="new-password"
                 />
                 <Field
                   id="confirm-password"
                   label="Confirm"
                   type="password"
-                  placeholder="••••"
+                  placeholder="••••••••"
                   autoComplete="new-password"
                 />
               </div>
@@ -82,19 +81,19 @@ function SignupShell({ callbackUrl }: { callbackUrl?: string }) {
 
             <button
               type="submit"
-              className="w-full rounded-lg bg-gradient-to-r from-accent to-accent-alt py-2.5 font-semibold text-white transition-all duration-300 hover:opacity-90 hover:shadow-lg hover:shadow-accent/20 active:scale-[0.98]"
+              className="w-full rounded-lg bg-[#8f2f24] py-2.5 font-semibold text-[#fff8ea] transition-all duration-300 hover:bg-[#76251c] active:scale-[0.98] dark:bg-[#d7bd73] dark:text-[#15130d] dark:hover:bg-[#e7ce88]"
             >
-              Generate Identity
+              Create Command Profile
             </button>
 
             <AuthDivider label="Or continue with" />
             <OAuthButtons callbackUrl={callbackUrl} />
 
-            <p className="text-center text-sm text-muted-foreground">
-              Already have a key?{' '}
+            <p className="text-center text-sm text-[#655c51] dark:text-[#c9c1b4]">
+              Already enlisted?{' '}
               <Link
                 href="/login"
-                className="text-accent-alt underline-offset-4 transition-colors hover:text-accent hover:underline decoration-accent-alt/40"
+                className="text-[#8f2f24] underline-offset-4 transition-colors hover:text-[#2c3520] hover:underline decoration-[#8f2f24]/40 dark:text-[#f29a7f] dark:hover:text-[#d7bd73]"
               >
                 Sign in
               </Link>
@@ -103,8 +102,8 @@ function SignupShell({ callbackUrl }: { callbackUrl?: string }) {
         </div>
         <AuroraPanel
           variant="signup"
-          title={`${siteConfig.name} Identity`}
-          subtitle="Initialize access"
+          title="Build your command"
+          subtitle="Ranks hidden until battle"
         />
       </section>
     </main>
@@ -128,7 +127,7 @@ function Field({
     <div className="space-y-1.5">
       <label
         htmlFor={id}
-        className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground"
+        className="font-mono text-[11px] uppercase tracking-wider text-[#6f674f] dark:text-[#b8b09e]"
       >
         {label}
       </label>
@@ -148,23 +147,13 @@ function AuthDivider({ label }: { label: string }) {
   return (
     <div className="relative">
       <div className="absolute inset-0 flex items-center">
-        <span className="w-full border-t border-border" />
+        <span className="w-full border-t border-[#8a7b62]/25 dark:border-white/10" />
       </div>
       <div className="relative flex justify-center">
-        <span className="bg-card px-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        <span className="bg-[#fbf8ef] px-3 font-mono text-[10px] uppercase tracking-widest text-[#6f674f] dark:bg-[#181b15] dark:text-[#b8b09e]">
           {label}
         </span>
       </div>
     </div>
-  );
-}
-
-function BackgroundOrbs() {
-  return (
-    <>
-      <span className="absolute left-8 top-16 size-56 rounded-full bg-accent-alt/20 blur-3xl" />
-      <span className="absolute bottom-6 left-1/2 size-80 -translate-x-1/2 rounded-full bg-accent/15 blur-3xl" />
-      <span className="absolute right-16 top-1/3 size-40 rounded-full bg-cyan-400/10 blur-3xl" />
-    </>
   );
 }

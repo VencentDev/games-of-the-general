@@ -6,8 +6,10 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -55,6 +57,11 @@ public class GlobalExceptionHandler {
     return error(HttpStatus.BAD_REQUEST, "BAD_REQUEST", exception.getMessage(), List.of());
   }
 
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  ResponseEntity<ApiError> handleUnreadableMessage(HttpMessageNotReadableException exception) {
+    return error(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "Invalid request body", List.of());
+  }
+
   @ExceptionHandler(ForbiddenException.class)
   ResponseEntity<ApiError> handleForbidden(ForbiddenException exception) {
     return error(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage(), List.of());
@@ -73,6 +80,16 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(AuthenticationException.class)
   ResponseEntity<ApiError> handleAuthentication(AuthenticationException exception) {
     return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required", List.of());
+  }
+
+  @ExceptionHandler(DataIntegrityViolationException.class)
+  ResponseEntity<ApiError> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+    log.warn("Database constraint violation", exception);
+    return error(
+        HttpStatus.CONFLICT,
+        "DATA_INTEGRITY_VIOLATION",
+        "Request conflicts with existing data",
+        List.of());
   }
 
   @ExceptionHandler(Exception.class)
