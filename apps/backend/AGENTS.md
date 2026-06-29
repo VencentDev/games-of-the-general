@@ -31,6 +31,19 @@ For normal business features, prefer this shape:
 - `<feature>/mapper/*Mapper.java`
 - `<feature>/validation/*` when validation is feature-specific
 
+For larger features, use purpose-based subpackages inside these folders instead of flattening every type at the feature root. The `match` feature uses this shape:
+
+- `match/dto/lobby/**` for lobby, match room, realtime, and player lobby settings API shapes.
+- `match/dto/setup/**` for setup formation API shapes.
+- `match/dto/state/**` for board, piece, captured-piece, and game-state projection API shapes.
+- `match/dto/move/**` for legal move, move command, move history, and battle resolution API shapes.
+- `match/enums/lobby/**` for lobby/match listing enums.
+- `match/enums/rules/**` for game-rule enums, such as piece type and battle result.
+- `match/enums/state/**` for live match-state enums, such as phase, side, piece status, win reason, and draw reason.
+- `match/repository/lobby/**` for lobby and seat persistence.
+- `match/repository/state/**` for board/piece state persistence.
+- `match/repository/move/**` for move-history persistence.
+
 Keep cross-cutting code in the existing shared packages:
 
 - `common/exception/**`: API error model, global exception handling, and domain HTTP exceptions.

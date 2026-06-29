@@ -25,7 +25,7 @@ Create the model in this order so each layer has something stable to depend on.
 
 Suggested files:
 
-- `apps/backend/src/main/java/com/vencentdev/backend/match/entity/PieceStatus.java`
+- `apps/backend/src/main/java/com/vencentdev/backend/match/enums/PieceStatus.java`
 - `apps/backend/src/main/java/com/vencentdev/backend/match/dto/BoardPositionResponse.java`
 - `apps/backend/src/main/java/com/vencentdev/backend/match/dto/BoardSquareResponse.java`
 
@@ -100,8 +100,8 @@ Why this matters:
 
 Suggested files:
 
-- `apps/backend/src/main/java/com/vencentdev/backend/match/entity/WinReason.java`
-- `apps/backend/src/main/java/com/vencentdev/backend/match/entity/DrawReason.java`
+- `apps/backend/src/main/java/com/vencentdev/backend/match/enums/WinReason.java`
+- `apps/backend/src/main/java/com/vencentdev/backend/match/enums/DrawReason.java`
 - `apps/backend/src/main/java/com/vencentdev/backend/match/entity/GameStateSnapshot.java` if using JSON state
 - Or migration columns/tables if using relational state
 
