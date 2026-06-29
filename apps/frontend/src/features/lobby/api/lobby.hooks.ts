@@ -231,6 +231,8 @@ export function useMatch(matchId: string) {
     queryKey: lobbyKeys.match(matchId),
     queryFn: () => clientApi<MatchSummary>(session?.accessToken, `/api/v1/matches/${matchId}`),
     enabled: !!session?.accessToken && !!matchId,
+    refetchInterval: (query) => (query.state.data?.phase === 'GAME_OVER' ? false : 2_500),
+    refetchIntervalInBackground: true,
   });
 }
 
@@ -241,6 +243,8 @@ export function useGameState(matchId: string) {
     queryKey: lobbyKeys.state(matchId),
     queryFn: () => clientApi<GameState>(session?.accessToken, `/api/v1/matches/${matchId}/state`),
     enabled: !!session?.accessToken && !!matchId,
+    refetchInterval: (query) => (query.state.data?.phase === 'GAME_OVER' ? false : 1_500),
+    refetchIntervalInBackground: true,
   });
 }
 
@@ -379,6 +383,11 @@ export function useMovePiece(matchId: string) {
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(matchId) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
     },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.state(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+    },
   });
 }
 
@@ -390,5 +399,7 @@ export function useMoveHistory(matchId: string) {
     queryFn: () =>
       clientApi<MoveHistory[]>(session?.accessToken, `/api/v1/matches/${matchId}/moves`),
     enabled: !!session?.accessToken && !!matchId,
+    refetchInterval: 1_500,
+    refetchIntervalInBackground: true,
   });
 }
