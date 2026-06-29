@@ -24,5 +24,7 @@ public record MatchResponse(
     String resignedSide,
     Instant createdAt,
     Instant startedAt,
+    Instant setupStartedAt,
+    Instant setupEndsAt,
     Instant finishedAt,
     List<MatchSeatResponse> seats) {}

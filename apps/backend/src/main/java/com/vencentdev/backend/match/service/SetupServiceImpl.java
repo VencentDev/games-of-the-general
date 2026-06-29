@@ -11,7 +11,6 @@ import com.vencentdev.backend.match.dto.setup.SetupPieceRequest;
 import com.vencentdev.backend.match.entity.GameMatch;
 import com.vencentdev.backend.match.entity.MatchPiece;
 import com.vencentdev.backend.match.entity.MatchSeat;
-import com.vencentdev.backend.match.enums.lobby.MatchStatus;
 import com.vencentdev.backend.match.enums.rules.PieceType;
 import com.vencentdev.backend.match.enums.state.GamePhase;
 import com.vencentdev.backend.match.enums.state.PieceStatus;
@@ -20,7 +19,7 @@ import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
 import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
 import com.vencentdev.backend.match.repository.state.MatchPieceRepository;
 import com.vencentdev.backend.user.service.UserService;
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -36,6 +35,7 @@ public class SetupServiceImpl implements SetupService {
   private final MatchSeatRepository seatRepository;
   private final GameStateProjectionService projectionService;
   private final MatchRealtimeService realtimeService;
+  private final SetupTimerService setupTimerService;
   private final UserService userService;
 
   public SetupServiceImpl(
@@ -44,12 +44,14 @@ public class SetupServiceImpl implements SetupService {
       MatchSeatRepository seatRepository,
       GameStateProjectionService projectionService,
       MatchRealtimeService realtimeService,
+      SetupTimerService setupTimerService,
       UserService userService) {
     this.matchRepository = matchRepository;
     this.pieceRepository = pieceRepository;
     this.seatRepository = seatRepository;
     this.projectionService = projectionService;
     this.realtimeService = realtimeService;
+    this.setupTimerService = setupTimerService;
     this.userService = userService;
   }
 
@@ -58,12 +60,21 @@ public class SetupServiceImpl implements SetupService {
   public SetupFormationResponse updateFormation(
       AuthenticatedUser principal, UUID matchId, SetupFormationRequest request) {
     UUID userId = userService.resolveInternalId(principal);
-    GameMatch match = findMatch(matchId);
+    GameMatch match = findMatchForUpdate(matchId);
     MatchSeat seat = requireSeat(match, userId);
+    setupTimerService.applyExpiredSetup(match);
     requireSetup(match);
     ensurePieces(match);
 
+    Set<UUID> requestedPieceIds = new HashSet<>();
+    for (SetupPieceRequest pieceRequest : request.pieces()) {
+      if (!requestedPieceIds.add(pieceRequest.pieceId())) {
+        throw new ConflictException("Piece was requested more than once");
+      }
+    }
+
     Set<String> occupied = new HashSet<>();
+    List<RequestedSetupPiece> requestedPieces = new ArrayList<>();
     for (SetupPieceRequest pieceRequest : request.pieces()) {
       MatchPiece piece =
           pieceRepository
@@ -75,9 +86,7 @@ public class SetupServiceImpl implements SetupService {
       }
 
       if (pieceRequest.row() == null && pieceRequest.column() == null) {
-        piece.setStatus(PieceStatus.UNPLACED);
-        piece.setRow(null);
-        piece.setColumn(null);
+        requestedPieces.add(new RequestedSetupPiece(pieceRequest, piece));
         continue;
       }
 
@@ -98,10 +107,29 @@ public class SetupServiceImpl implements SetupService {
           .findByMatchIdAndStatusAndRowAndColumn(
               match.getId(), PieceStatus.ACTIVE, pieceRequest.row(), pieceRequest.column())
           .filter(existing -> !existing.getId().equals(piece.getId()))
+          .filter(existing -> !requestedPieceIds.contains(existing.getId()))
           .ifPresent(
               existing -> {
                 throw new ConflictException("Square is already occupied");
               });
+
+      requestedPieces.add(new RequestedSetupPiece(pieceRequest, piece));
+    }
+
+    for (RequestedSetupPiece requestedPiece : requestedPieces) {
+      MatchPiece piece = requestedPiece.piece();
+      piece.setStatus(PieceStatus.UNPLACED);
+      piece.setRow(null);
+      piece.setColumn(null);
+    }
+    pieceRepository.flush();
+
+    for (RequestedSetupPiece requestedPiece : requestedPieces) {
+      SetupPieceRequest pieceRequest = requestedPiece.request();
+      MatchPiece piece = requestedPiece.piece();
+      if (pieceRequest.row() == null && pieceRequest.column() == null) {
+        continue;
+      }
 
       piece.setStatus(PieceStatus.ACTIVE);
       piece.setRow(pieceRequest.row());
@@ -119,8 +147,9 @@ public class SetupServiceImpl implements SetupService {
   @Transactional
   public SetupFormationResponse markReady(AuthenticatedUser principal, UUID matchId) {
     UUID userId = userService.resolveInternalId(principal);
-    GameMatch match = findMatch(matchId);
+    GameMatch match = findMatchForUpdate(matchId);
     MatchSeat seat = requireSeat(match, userId);
+    setupTimerService.applyExpiredSetup(match);
     requireSetup(match);
     ensurePieces(match);
 
@@ -144,10 +173,7 @@ public class SetupServiceImpl implements SetupService {
             && seats.stream().allMatch(MatchSeat::getReady);
 
     if (allReady) {
-      match.setStatus(MatchStatus.PLAYING);
-      match.setPhase(GamePhase.PLAYING);
-      match.setCurrentTurn(PlayerSide.RED);
-      match.setStartedAt(Instant.now());
+      setupTimerService.startPlaying(match);
     }
 
     SetupFormationResponse response =
@@ -177,9 +203,9 @@ public class SetupServiceImpl implements SetupService {
     }
   }
 
-  private GameMatch findMatch(UUID matchId) {
+  private GameMatch findMatchForUpdate(UUID matchId) {
     return matchRepository
-        .findById(matchId)
+        .findByIdForUpdate(matchId)
         .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
   }
 
@@ -198,4 +224,6 @@ public class SetupServiceImpl implements SetupService {
   private boolean inSetupZone(PlayerSide side, int row) {
     return side == PlayerSide.RED ? row >= 0 && row <= 2 : row >= 5 && row <= 7;
   }
+
+  private record RequestedSetupPiece(SetupPieceRequest request, MatchPiece piece) {}
 }

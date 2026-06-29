@@ -143,6 +143,7 @@ class MoveServiceTest {
     assertThat(defender.getCapturedByMoveNumber()).isEqualTo(8);
     assertThat(fixture.piece.getRow()).isEqualTo(3);
     assertThat(fixture.piece.getColumn()).isEqualTo(5);
+    verify(pieceRepository).flush();
   }
 
   @Test
@@ -204,6 +205,33 @@ class MoveServiceTest {
     assertThat(fixture.match.getWinnerSide()).isEqualTo(PlayerSide.RED);
     assertThat(fixture.match.getWinReason()).isEqualTo(WinReason.FLAG_CAPTURED);
     assertThat(fixture.match.getCurrentTurn()).isEqualTo(PlayerSide.RED);
+    verify(pieceRepository).flush();
+  }
+
+  @Test
+  void attackingWithFlagAndLosingEndsGameForDefender() {
+    Fixture fixture = fixture(PlayerSide.RED);
+    fixture.piece.setType(PieceType.FLAG);
+    MatchPiece defender = activePiece(PlayerSide.BLUE, PieceType.PRIVATE, 3, 5);
+    when(legalMoveService.isLegalTarget(fixture.match, fixture.piece, 3, 5)).thenReturn(true);
+    when(pieceRepository.findByMatchIdAndStatusAndRowAndColumn(
+            fixture.match.getId(), PieceStatus.ACTIVE, 3, 5))
+        .thenReturn(Optional.of(defender));
+    when(battleResolver.resolve(fixture.piece.getType(), defender.getType()))
+        .thenReturn(new BattleResolution(BattleResult.DEFENDER_WINS));
+
+    service.move(
+        fixture.principal, fixture.match.getId(), new MoveRequest(fixture.piece.getId(), 3, 5));
+
+    assertThat(fixture.piece.getStatus()).isEqualTo(PieceStatus.CAPTURED);
+    assertThat(fixture.piece.getRow()).isNull();
+    assertThat(fixture.piece.getColumn()).isNull();
+    assertThat(defender.getStatus()).isEqualTo(PieceStatus.ACTIVE);
+    assertThat(fixture.match.getPhase()).isEqualTo(GamePhase.GAME_OVER);
+    assertThat(fixture.match.getStatus()).isEqualTo(MatchStatus.FINISHED);
+    assertThat(fixture.match.getWinnerSide()).isEqualTo(PlayerSide.BLUE);
+    assertThat(fixture.match.getWinReason()).isEqualTo(WinReason.FLAG_CAPTURED);
+    assertThat(fixture.match.getCurrentTurn()).isEqualTo(PlayerSide.RED);
   }
 
   private Fixture fixture(PlayerSide side) {
@@ -223,6 +251,7 @@ class MoveServiceTest {
 
     when(userService.resolveInternalId(principal)).thenReturn(userId);
     when(matchRepository.findById(match.getId())).thenReturn(Optional.of(match));
+    when(matchRepository.findByIdForUpdate(match.getId())).thenReturn(Optional.of(match));
     when(seatRepository.findByMatchIdAndUserId(match.getId(), userId))
         .thenReturn(Optional.of(seat));
     when(pieceRepository.findByMatchIdAndId(match.getId(), piece.getId()))
@@ -238,6 +267,8 @@ class MoveServiceTest {
                 side.name(),
                 side.name(),
                 match.getMoveNumber(),
+                null,
+                null,
                 null,
                 null,
                 null,

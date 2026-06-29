@@ -69,6 +69,14 @@ class BattleResolverTest {
   }
 
   @Test
+  void flagMovingIntoAnyNonFlagPieceLoses() {
+    assertThat(resolver.resolve(PieceType.FLAG, PieceType.PRIVATE).result())
+        .isEqualTo(BattleResult.DEFENDER_WINS);
+    assertThat(resolver.resolve(PieceType.FLAG, PieceType.FIVE_STAR_GENERAL).result())
+        .isEqualTo(BattleResult.DEFENDER_WINS);
+  }
+
+  @Test
   void nullAttackerOrDefenderIsInvalid() {
     assertThat(resolver.resolve(null, PieceType.FLAG).result()).isEqualTo(BattleResult.INVALID);
     assertThat(resolver.resolve(PieceType.PRIVATE, null).result()).isEqualTo(BattleResult.INVALID);

@@ -3,6 +3,8 @@ package com.vencentdev.backend.match.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
@@ -39,6 +41,7 @@ class SetupServiceTest {
   private final GameStateProjectionService projectionService =
       Mockito.mock(GameStateProjectionService.class);
   private final MatchRealtimeService realtimeService = Mockito.mock(MatchRealtimeService.class);
+  private final SetupTimerService setupTimerService = Mockito.mock(SetupTimerService.class);
   private final UserService userService = Mockito.mock(UserService.class);
   private final SetupService service =
       new SetupServiceImpl(
@@ -47,6 +50,7 @@ class SetupServiceTest {
           seatRepository,
           projectionService,
           realtimeService,
+          setupTimerService,
           userService);
 
   @Test
@@ -124,6 +128,46 @@ class SetupServiceTest {
   }
 
   @Test
+  void canSwapTwoOwnPlacedPiecesInOneSetupUpdate() {
+    Fixture fixture = fixture(PlayerSide.RED);
+    MatchPiece first = piece(fixture.match, PlayerSide.RED, PieceType.PRIVATE);
+    first.setStatus(PieceStatus.ACTIVE);
+    first.setRow(0);
+    first.setColumn(0);
+    MatchPiece second = piece(fixture.match, PlayerSide.RED, PieceType.SPY);
+    second.setStatus(PieceStatus.ACTIVE);
+    second.setRow(0);
+    second.setColumn(1);
+
+    when(pieceRepository.findByMatchIdAndId(fixture.match.getId(), first.getId()))
+        .thenReturn(Optional.of(first));
+    when(pieceRepository.findByMatchIdAndId(fixture.match.getId(), second.getId()))
+        .thenReturn(Optional.of(second));
+    when(pieceRepository.findByMatchIdAndStatusAndRowAndColumn(
+            fixture.match.getId(), PieceStatus.ACTIVE, 0, 1))
+        .thenReturn(Optional.of(second));
+    when(pieceRepository.findByMatchIdAndStatusAndRowAndColumn(
+            fixture.match.getId(), PieceStatus.ACTIVE, 0, 0))
+        .thenReturn(Optional.of(first));
+
+    service.updateFormation(
+        fixture.principal,
+        fixture.match.getId(),
+        new SetupFormationRequest(
+            List.of(
+                new SetupPieceRequest(first.getId(), 0, 1),
+                new SetupPieceRequest(second.getId(), 0, 0))));
+
+    assertThat(first.getStatus()).isEqualTo(PieceStatus.ACTIVE);
+    assertThat(first.getRow()).isEqualTo(0);
+    assertThat(first.getColumn()).isEqualTo(1);
+    assertThat(second.getStatus()).isEqualTo(PieceStatus.ACTIVE);
+    assertThat(second.getRow()).isEqualTo(0);
+    assertThat(second.getColumn()).isEqualTo(0);
+    verify(pieceRepository).flush();
+  }
+
+  @Test
   void cannotReadyBeforeAllTwentyOnePiecesArePlaced() {
     Fixture fixture = fixture(PlayerSide.RED);
     when(pieceRepository.countByMatchIdAndSideAndStatus(
@@ -166,8 +210,20 @@ class SetupServiceTest {
 
     when(userService.resolveInternalId(principal)).thenReturn(userId);
     when(matchRepository.findById(match.getId())).thenReturn(Optional.of(match));
+    when(matchRepository.findByIdForUpdate(match.getId())).thenReturn(Optional.of(match));
     when(seatRepository.findByMatchIdAndUserId(match.getId(), userId))
         .thenReturn(Optional.of(seat));
+    doAnswer(
+            invocation -> {
+              GameMatch startedMatch = invocation.getArgument(0);
+              startedMatch.setStatus(MatchStatus.PLAYING);
+              startedMatch.setPhase(GamePhase.PLAYING);
+              startedMatch.setCurrentTurn(PlayerSide.RED);
+              startedMatch.setStartedAt(java.time.Instant.now());
+              return null;
+            })
+        .when(setupTimerService)
+        .startPlaying(any(GameMatch.class));
     when(pieceRepository.findByMatchIdOrderBySideAscTypeAsc(match.getId()))
         .thenReturn(List.of(piece(match, side, PieceType.PRIVATE)));
     when(projectionService.project(any(GameMatch.class), any(PlayerSide.class)))
@@ -179,6 +235,8 @@ class SetupServiceTest {
                 side.name(),
                 null,
                 match.getMoveNumber(),
+                null,
+                null,
                 null,
                 null,
                 null,

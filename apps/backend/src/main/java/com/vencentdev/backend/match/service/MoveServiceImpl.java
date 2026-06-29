@@ -16,6 +16,7 @@ import com.vencentdev.backend.match.entity.MatchPiece;
 import com.vencentdev.backend.match.entity.MatchSeat;
 import com.vencentdev.backend.match.enums.lobby.MatchStatus;
 import com.vencentdev.backend.match.enums.rules.BattleResult;
+import com.vencentdev.backend.match.enums.rules.PieceType;
 import com.vencentdev.backend.match.enums.state.GamePhase;
 import com.vencentdev.backend.match.enums.state.PieceStatus;
 import com.vencentdev.backend.match.enums.state.PlayerSide;
@@ -86,7 +87,7 @@ public class MoveServiceImpl implements MoveService {
   @Transactional
   public MoveResponse move(AuthenticatedUser principal, UUID matchId, MoveRequest request) {
     UUID userId = userService.resolveInternalId(principal);
-    GameMatch match = findMatch(matchId);
+    GameMatch match = findMatchForUpdate(matchId);
     MatchSeat seat = requireSeat(match, userId);
     MatchPiece piece = findPiece(match, request.pieceId());
 
@@ -182,14 +183,11 @@ public class MoveServiceImpl implements MoveService {
         defender.setRow(null);
         defender.setColumn(null);
         defender.setCapturedByMoveNumber(nextMoveNumber);
+        pieceRepository.flush();
         attacker.setRow(toRow);
         attacker.setColumn(toColumn);
         if (result == BattleResult.FLAG_CAPTURED) {
-          match.setPhase(GamePhase.GAME_OVER);
-          match.setStatus(MatchStatus.FINISHED);
-          match.setWinnerSide(attacker.getSide());
-          match.setWinReason(WinReason.FLAG_CAPTURED);
-          match.setFinishedAt(Instant.now());
+          finishByFlagCapture(match, attacker.getSide());
         } else {
           winConditionService.applyPostMoveWinConditions(match, attacker);
         }
@@ -199,6 +197,9 @@ public class MoveServiceImpl implements MoveService {
         attacker.setRow(null);
         attacker.setColumn(null);
         attacker.setCapturedByMoveNumber(nextMoveNumber);
+        if (attacker.getType() == PieceType.FLAG) {
+          finishByFlagCapture(match, defender.getSide());
+        }
       }
       case BOTH_ELIMINATED -> {
         attacker.setStatus(PieceStatus.CAPTURED);
@@ -214,9 +215,23 @@ public class MoveServiceImpl implements MoveService {
     }
   }
 
+  private void finishByFlagCapture(GameMatch match, PlayerSide winnerSide) {
+    match.setPhase(GamePhase.GAME_OVER);
+    match.setStatus(MatchStatus.FINISHED);
+    match.setWinnerSide(winnerSide);
+    match.setWinReason(WinReason.FLAG_CAPTURED);
+    match.setFinishedAt(Instant.now());
+  }
+
   private GameMatch findMatch(UUID matchId) {
     return matchRepository
         .findById(matchId)
+        .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
+  }
+
+  private GameMatch findMatchForUpdate(UUID matchId) {
+    return matchRepository
+        .findByIdForUpdate(matchId)
         .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
   }
 

@@ -96,6 +96,12 @@ public class GameMatch extends AuditableEntity {
   @Column(name = "started_at")
   private Instant startedAt;
 
+  @Column(name = "setup_started_at")
+  private Instant setupStartedAt;
+
+  @Column(name = "setup_ends_at")
+  private Instant setupEndsAt;
+
   @Column(name = "finished_at")
   private Instant finishedAt;
 }

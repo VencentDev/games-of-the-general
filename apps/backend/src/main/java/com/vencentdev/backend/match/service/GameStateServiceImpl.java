@@ -25,6 +25,7 @@ public class GameStateServiceImpl implements GameStateService {
   private final MatchPieceRepository pieceRepository;
   private final MatchSeatRepository seatRepository;
   private final GameStateProjectionService projectionService;
+  private final SetupTimerService setupTimerService;
   private final UserService userService;
 
   public GameStateServiceImpl(
@@ -32,11 +33,13 @@ public class GameStateServiceImpl implements GameStateService {
       MatchPieceRepository pieceRepository,
       MatchSeatRepository seatRepository,
       GameStateProjectionService projectionService,
+      SetupTimerService setupTimerService,
       UserService userService) {
     this.matchRepository = matchRepository;
     this.pieceRepository = pieceRepository;
     this.seatRepository = seatRepository;
     this.projectionService = projectionService;
+    this.setupTimerService = setupTimerService;
     this.userService = userService;
   }
 
@@ -53,6 +56,7 @@ public class GameStateServiceImpl implements GameStateService {
             .findByMatchIdAndUserId(match.getId(), userId)
             .orElseThrow(() -> new ForbiddenException("You are not seated in this match"));
 
+    setupTimerService.applyExpiredSetup(match);
     ensurePieces(match);
     return projectionService.project(match, seat.getSide());
   }

@@ -78,6 +78,8 @@ public class GameStateProjectionServiceImpl implements GameStateProjectionServic
         enumName(match.getWinnerSide()),
         enumName(match.getWinReason()),
         enumName(match.getDrawReason()),
+        match.getSetupStartedAt(),
+        match.getSetupEndsAt(),
         board,
         ownPieces,
         capturedPieces);
