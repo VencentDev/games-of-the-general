@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image, { type StaticImageData } from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -28,6 +29,25 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import blueWonImage from '@/assets/gg assets/blue won.png';
+import captainImage from '@/assets/gg assets/Captain.png';
+import colonelImage from '@/assets/gg assets/colonel.png';
+import firstLieutenantImage from '@/assets/gg assets/1st Lieutenant.png';
+import fiveStarImage from '@/assets/gg assets/5star.jpg';
+import flagImage from '@/assets/gg assets/flag.png';
+import fourStarImage from '@/assets/gg assets/4star.png';
+import lieutenantColonelImage from '@/assets/gg assets/Lieutenant Colonel.png';
+import lostImage from '@/assets/gg assets/lost.png';
+import majorImage from '@/assets/gg assets/Major.png';
+import oneStarImage from '@/assets/gg assets/1star.png';
+import privateImage from '@/assets/gg assets/private.png';
+import redWonImage from '@/assets/gg assets/Red won.png';
+import secondLieutenantImage from '@/assets/gg assets/2nd Lieutenant.png';
+import sergeantImage from '@/assets/gg assets/Sergeant.png';
+import spyImage from '@/assets/gg assets/spy.png';
+import threeStarImage from '@/assets/gg assets/3star.png';
+import twoStarImage from '@/assets/gg assets/2star.png';
+import wonImage from '@/assets/gg assets/won.png';
 import { useMatchSocket } from '@/features/lobby/api/match-socket.hook';
 import {
   type BoardSquare,
@@ -38,6 +58,7 @@ import {
   type PieceInstance,
   type PieceType,
   type PlayerSide,
+  useCreateMatch,
   useGameModel,
   useGameState,
   useLeaveMatch,
@@ -54,6 +75,24 @@ import { cn } from '@/lib/utils';
 const BOARD_ROWS = 8;
 const BOARD_COLUMNS = 9;
 
+const PIECE_IMAGES: Record<PieceType, StaticImageData> = {
+  FIVE_STAR_GENERAL: fiveStarImage,
+  FOUR_STAR_GENERAL: fourStarImage,
+  THREE_STAR_GENERAL: threeStarImage,
+  TWO_STAR_GENERAL: twoStarImage,
+  ONE_STAR_GENERAL: oneStarImage,
+  COLONEL: colonelImage,
+  LT_COLONEL: lieutenantColonelImage,
+  MAJOR: majorImage,
+  CAPTAIN: captainImage,
+  FIRST_LIEUTENANT: firstLieutenantImage,
+  SECOND_LIEUTENANT: secondLieutenantImage,
+  SERGEANT: sergeantImage,
+  SPY: spyImage,
+  PRIVATE: privateImage,
+  FLAG: flagImage,
+};
+
 type EmptySquare = BoardSquare & {
   piece: null;
 };
@@ -68,11 +107,22 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const updateSetup = useUpdateSetup(matchId);
   const markReady = useMarkReady(matchId);
   const movePiece = useMovePiece(matchId);
+  const createMatch = useCreateMatch();
   const socket = useMatchSocket(matchId);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [resultOverlay, setResultOverlay] = useState<{
+    image: StaticImageData;
+    alt: string;
+    durationMs: number;
+  } | null>(null);
+  const [gameOverDialogOpen, setGameOverDialogOpen] = useState(false);
   const moveInFlightRef = useRef(false);
+  const lastSeenMoveNumberRef = useRef(0);
+  const gameOverShownRef = useRef(false);
 
   const state = gameState.data;
   const viewerSide = state?.viewerSide;
@@ -148,8 +198,15 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const activePlacedCount =
     state?.ownPieces.filter((piece) => piece.status === 'ACTIVE').length ?? 0;
   const ownReady = Boolean(match.data?.seats.find((seat) => seat.side === viewerSide)?.ready);
-  const canMarkReady = state?.phase === 'SETUP' && activePlacedCount === 21 && !ownReady;
-  const canEditSetup = state?.phase === 'SETUP' && !ownReady;
+  const setupEndsAt = state?.setupEndsAt ?? match.data?.setupEndsAt ?? null;
+  const setupRemainingMs =
+    state?.phase === 'SETUP' && setupEndsAt
+      ? Math.max(0, new Date(setupEndsAt).getTime() - nowMs)
+      : null;
+  const setupLocked = setupRemainingMs !== null && setupRemainingMs <= 0;
+  const canMarkReady =
+    state?.phase === 'SETUP' && activePlacedCount === 21 && !ownReady && !setupLocked;
+  const canEditSetup = state?.phase === 'SETUP' && !ownReady && !setupLocked;
   const shouldShowInvite = match.data?.visibility === 'PRIVATE' && match.data.seats.length === 1;
   const inviteLink = useMemo(() => {
     if (!match.data) {
@@ -167,6 +224,14 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   }, [shouldShowInvite]);
 
   useEffect(() => {
+    if (state?.phase !== 'SETUP' || !setupEndsAt) {
+      return;
+    }
+
+    const interval = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(interval);
+  }, [setupEndsAt, state?.phase]);
+  useEffect(() => {
     if (!selectedPieceId || state?.ownPieces.some((piece) => piece.id === selectedPieceId)) {
       return;
     }
@@ -181,6 +246,74 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
 
     setSelectedPieceId(null);
   }, [isViewerTurn, state?.phase]);
+
+  useEffect(() => {
+    if (!viewerSide || moveHistory.data === undefined) {
+      return;
+    }
+
+    const latestMove = moveHistory.data.at(-1);
+    if (!latestMove) {
+      return;
+    }
+
+    if (latestMove.moveNumber <= lastSeenMoveNumberRef.current) {
+      return;
+    }
+
+    const shouldIgnoreInitialHistory = lastSeenMoveNumberRef.current === 0;
+    lastSeenMoveNumberRef.current = latestMove.moveNumber;
+
+    if (
+      shouldIgnoreInitialHistory ||
+      state?.phase === 'GAME_OVER' ||
+      latestMove.resultingPhase === 'GAME_OVER' ||
+      !latestMove.targetPieceId ||
+      !latestMove.battleResult
+    ) {
+      return;
+    }
+
+    const outcome = captureOutcomeForViewer(latestMove, viewerSide);
+    if (!outcome) {
+      return;
+    }
+
+    setResultOverlay({
+      image: outcome === 'WON' ? wonImage : lostImage,
+      alt: outcome === 'WON' ? 'Won capture' : 'Lost capture',
+      durationMs: 1_500,
+    });
+  }, [moveHistory.data, state?.phase, viewerSide]);
+
+  useEffect(() => {
+    if (!state || state.phase !== 'GAME_OVER' || gameOverShownRef.current) {
+      return;
+    }
+
+    gameOverShownRef.current = true;
+    const winnerImage = state.winnerSide === 'BLUE' ? blueWonImage : redWonImage;
+    setResultOverlay({
+      image: winnerImage,
+      alt: state.winnerSide === 'BLUE' ? 'Blue won' : 'Red won',
+      durationMs: 5_000,
+    });
+
+    const timeout = window.setTimeout(() => {
+      setGameOverDialogOpen(true);
+    }, 5_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [state]);
+
+  useEffect(() => {
+    if (!resultOverlay) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setResultOverlay(null), resultOverlay.durationMs);
+    return () => window.clearTimeout(timeout);
+  }, [resultOverlay]);
 
   function leave() {
     leaveMatch.mutate(matchId, {
@@ -216,6 +349,11 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
 
       if (selectedPieceId === visibleOwnPiece.id) {
         setSelectedPieceId(null);
+        return;
+      }
+
+      if (state.phase === 'SETUP' && selectedPieceId) {
+        swapSelectedPieceWith(visibleOwnPiece.id);
         return;
       }
 
@@ -268,6 +406,37 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     updateSetup.mutate([{ pieceId: selectedPieceId, row, column }], {
       onError: showMutationError,
     });
+  }
+
+  function swapSelectedPieceWith(targetPieceId: string) {
+    if (!state || !selectedPieceId || !canEditSetup || updateSetup.isPending) {
+      return;
+    }
+
+    const selected = state.ownPieces.find((piece) => piece.id === selectedPieceId);
+    const target = state.ownPieces.find((piece) => piece.id === targetPieceId);
+    if (!selected || !target || target.status !== 'ACTIVE') {
+      return;
+    }
+
+    updateSetup.mutate(
+      [
+        {
+          pieceId: selected.id,
+          row: target.row,
+          column: target.column,
+        },
+        {
+          pieceId: target.id,
+          row: selected.row,
+          column: selected.column,
+        },
+      ],
+      {
+        onSuccess: () => setSelectedPieceId(selected.id),
+        onError: showMutationError,
+      },
+    );
   }
 
   function moveSelectedPiece(row: number, column: number) {
@@ -333,6 +502,26 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     });
   }
 
+  function rematch() {
+    if (!match.data) {
+      router.push('/lobby');
+      return;
+    }
+
+    createMatch.mutate(
+      {
+        name: `${match.data.name} rematch`,
+        visibility: match.data.visibility,
+        mode: match.data.mode,
+        preparationSeconds: match.data.preparationSeconds,
+      },
+      {
+        onSuccess: (createdMatch) => router.push(`/matches/${createdMatch.id}`),
+        onError: showMutationError,
+      },
+    );
+  }
+
   const busy = updateSetup.isPending || markReady.isPending || movePiece.isPending;
   const lastMoves = (moveHistory.data ?? []).slice(-8).reverse();
   const bottomSeat = viewerSide ? seats.find((seat) => seat.side === viewerSide) : seats[1];
@@ -353,6 +542,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                     state?.capturedPieces.filter((piece) => piece.side === topSeat.side) ?? []
                   }
                   definitions={pieceDefinitions}
+                  setupRemainingMs={setupRemainingMs}
                 />
               ) : (
                 <div className="mb-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/55">
@@ -394,26 +584,45 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                             target?.attack && 'bg-[#a44536] hover:bg-[#b94f3f]',
                             isSelected && 'z-10 ring-4 ring-[#f6e09f]',
                           )}
-                          disabled={busy || gameState.isLoading || state?.phase === 'GAME_OVER'}
+                          disabled={
+                            busy ||
+                            gameState.isLoading ||
+                            state?.phase === 'GAME_OVER' ||
+                            setupLocked
+                          }
                           onClick={() => handleSquareClick(square)}
                         >
                           <span
                             className={cn(
-                              'flex size-[72%] items-center justify-center rounded-full border-2 text-[clamp(0.6rem,1.35vw,1.05rem)] font-black shadow-md',
+                              'flex h-[68%] w-[78%] items-center justify-center rounded-sm border-2 text-[clamp(0.6rem,1.35vw,1.05rem)] font-black shadow-md',
                               pieceTone(square.piece?.side),
                               !square.piece && 'border-transparent bg-transparent shadow-none',
                               square.piece &&
                                 !square.piece.visible &&
-                                'border-[#111315] bg-[#202326] text-[#f7ecd8]',
+                                'h-[58%] w-[58%] rounded-full border-[#111315] bg-[#202326] text-[#f7ecd8]',
                             )}
                           >
-                            {squareLabel(square, pieceDefinitions)}
+                            <PieceFace
+                              piece={square.piece}
+                              definitions={pieceDefinitions}
+                              size="board"
+                            />
                           </span>
                         </button>
                       );
                     })}
                   </div>
-                  {state?.phase === 'GAME_OVER' ? (
+                  {resultOverlay ? (
+                    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-transparent p-6">
+                      <Image
+                        src={resultOverlay.image}
+                        alt={resultOverlay.alt}
+                        className="h-auto max-h-[42%] w-[72%] max-w-[44rem] object-contain drop-shadow-2xl"
+                        priority
+                      />
+                    </div>
+                  ) : null}
+                  {state?.phase === 'GAME_OVER' && !resultOverlay ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-6">
                       <div className="rounded-md border border-white/15 bg-[#111315]/95 px-6 py-4 text-center shadow-2xl">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">
@@ -445,6 +654,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       state?.capturedPieces.filter((piece) => piece.side === bottomSeat.side) ?? []
                     }
                     definitions={pieceDefinitions}
+                    setupRemainingMs={setupRemainingMs}
                   />
                 </div>
               ) : null}
@@ -504,6 +714,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       piece={piece}
                       definition={pieceDefinitions.get(piece.type)}
                       selected={selectedPieceId === piece.id}
+                      disabled={!canEditSetup}
                       onSelect={() => setSelectedPieceId(piece.id)}
                     />
                   ))}
@@ -589,11 +800,11 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
             <Button
               className="border border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
               disabled={leaveMatch.isPending || !match.data}
-              onClick={leave}
+              onClick={() => setLeaveDialogOpen(true)}
               type="button"
             >
               <DoorOpen className="mr-2 size-4" />
-              {leaveMatch.isPending ? 'Leaving...' : 'Leave Match'}
+              Leave Match
             </Button>
           </div>
           <div className="flex overflow-hidden rounded-md border border-white/10">
@@ -644,6 +855,72 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
+        <DialogContent className="border-white/15 bg-[#181b15] text-[#f6f0e4] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl font-black tracking-normal">
+              <DoorOpen className="size-5 text-[#d6a348]" />
+              Leave match?
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-6 text-white/65">
+              Are you sure you want to leave this match?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/15 bg-white/5 text-white hover:bg-white/10"
+              disabled={leaveMatch.isPending}
+              onClick={() => setLeaveDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#8f2f24] text-white hover:bg-[#76251c]"
+              disabled={leaveMatch.isPending}
+              onClick={leave}
+            >
+              {leaveMatch.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Leave Match
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={gameOverDialogOpen} onOpenChange={setGameOverDialogOpen}>
+        <DialogContent className="border-white/15 bg-[#181b15] text-[#f6f0e4] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black tracking-normal">Game over</DialogTitle>
+            <DialogDescription className="text-sm leading-6 text-white/65">
+              {state?.winnerSide
+                ? `${state.winnerSide} won by ${state.winReason ?? 'final result'}.`
+                : `Match ended${state?.drawReason ? ` by ${state.drawReason}` : ''}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/15 bg-white/5 text-white hover:bg-white/10"
+              onClick={() => router.push('/lobby')}
+            >
+              Return to lobby
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+              disabled={createMatch.isPending}
+              onClick={rematch}
+            >
+              {createMatch.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Rematch
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
@@ -654,12 +931,14 @@ function PlayerBar({
   viewerSide,
   capturedPieces,
   definitions,
+  setupRemainingMs,
 }: {
   seat: MatchSeat;
   active: boolean;
   viewerSide: PlayerSide | undefined;
   capturedPieces: GameState['capturedPieces'];
   definitions: Map<PieceType, PieceDefinition>;
+  setupRemainingMs: number | null;
 }) {
   const displayName = seat.side === viewerSide ? 'You' : 'Opponent';
   const isViewer = seat.side === viewerSide;
@@ -688,6 +967,11 @@ function PlayerBar({
             {seat.side} {seat.ready ? 'ready' : 'not ready'}
           </p>
         </div>
+        {setupRemainingMs !== null ? (
+          <div className="ml-1 rounded-sm bg-white px-2 py-1 font-mono text-sm font-black tabular-nums text-[#141414] shadow">
+            {formatSetupTime(setupRemainingMs)}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
@@ -699,13 +983,19 @@ function PlayerBar({
                   'flex size-7 items-center justify-center rounded-full border text-[0.65rem] font-black',
                   isViewer
                     ? seat.side === 'RED'
-                      ? 'border-[#d46b5d] bg-[#7e2c23] text-[#ffd7c8]'
-                      : 'border-[#6ea1d6] bg-[#244b78] text-[#d9ecff]'
+                      ? 'rounded-sm border-[#d46b5d] bg-[#7e2c23] text-[#ffd7c8]'
+                      : 'rounded-sm border-[#6ea1d6] bg-[#244b78] text-[#d9ecff]'
                     : 'border-white/15 bg-[#050607] text-transparent',
                 )}
                 aria-label={isViewer ? pieceAbbreviation(item.type, definitions) : 'Hidden piece'}
               >
-                {isViewer ? pieceAbbreviation(item.type, definitions) : ''}
+                {isViewer ? (
+                  <Image
+                    src={PIECE_IMAGES[item.type]}
+                    alt={definitions.get(item.type)?.label ?? item.type}
+                    className="size-full rounded-sm object-cover"
+                  />
+                ) : null}
               </div>
               <p className="text-xs text-white/70">{item.count}</p>
             </div>
@@ -722,30 +1012,68 @@ function SetupPieceButton({
   piece,
   definition,
   selected,
+  disabled,
   onSelect,
 }: {
   piece: PieceInstance;
   definition: PieceDefinition | undefined;
   selected: boolean;
+  disabled: boolean;
   onSelect: () => void;
 }) {
+  const isDisabled = disabled || piece.status === 'CAPTURED';
+
   return (
     <button
       type="button"
       className={cn(
-        'flex aspect-square min-w-0 items-center justify-center rounded-full border text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6e09f]',
+        'flex aspect-[4/3] min-w-0 items-center justify-center rounded-sm border text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6e09f]',
         piece.status === 'ACTIVE'
           ? 'border-white/10 bg-white/10 text-white/50'
           : 'border-[#d6a348] bg-[#27211a] text-[#f6d38b] hover:bg-[#352917]',
         selected && 'ring-2 ring-[#f6e09f]',
         piece.status === 'CAPTURED' && 'opacity-35',
+        isDisabled && 'cursor-not-allowed opacity-45',
       )}
-      disabled={piece.status === 'CAPTURED'}
+      disabled={isDisabled}
       title={definition?.label ?? piece.type}
       onClick={onSelect}
     >
-      {definition?.abbreviation ?? pieceAbbreviation(piece.type, new Map())}
+      <Image
+        src={PIECE_IMAGES[piece.type]}
+        alt={definition?.label ?? piece.type}
+        className="h-[82%] w-[90%] rounded-sm object-cover"
+      />
     </button>
+  );
+}
+
+function PieceFace({
+  piece,
+  definitions,
+  size,
+}: {
+  piece: BoardSquare['piece'];
+  definitions: Map<PieceType, PieceDefinition>;
+  size: 'board' | 'small';
+}) {
+  if (!piece) {
+    return null;
+  }
+
+  if (!piece.visible || !piece.type) {
+    return <span className="text-xs font-black">?</span>;
+  }
+
+  return (
+    <Image
+      src={PIECE_IMAGES[piece.type]}
+      alt={definitions.get(piece.type)?.label ?? piece.type}
+      className={cn(
+        'rounded-full object-cover',
+        size === 'board' ? 'h-full w-full rounded-sm' : 'size-7 rounded-sm',
+      )}
+    />
   );
 }
 
@@ -801,26 +1129,6 @@ function pieceTone(side: PlayerSide | undefined) {
   }
 
   return '';
-}
-
-function squareLabel(square: BoardSquare, definitions: Map<PieceType, PieceDefinition>) {
-  if (!square.piece) {
-    return '';
-  }
-
-  if (!square.piece.visible) {
-    return '?';
-  }
-
-  if (square.piece.abbreviation) {
-    return square.piece.abbreviation;
-  }
-
-  if (square.piece.type) {
-    return pieceAbbreviation(square.piece.type, definitions);
-  }
-
-  return '?';
 }
 
 function pieceAbbreviation(type: PieceType, definitions: Map<PieceType, PieceDefinition>) {
@@ -881,6 +1189,22 @@ function moveHistoryLabel(
   );
 }
 
+function captureOutcomeForViewer(move: MoveHistory, viewerSide: PlayerSide) {
+  const viewerActed = move.actingSide === viewerSide;
+
+  switch (move.battleResult) {
+    case 'ATTACKER_WINS':
+    case 'FLAG_CAPTURED':
+      return viewerActed ? 'WON' : 'LOST';
+    case 'DEFENDER_WINS':
+      return viewerActed ? 'LOST' : 'WON';
+    case 'BOTH_ELIMINATED':
+      return 'LOST';
+    default:
+      return null;
+  }
+}
+
 function turnRailTone(
   currentTurn: PlayerSide | null | undefined,
   viewerSide: PlayerSide | undefined,
@@ -908,6 +1232,13 @@ function turnRailLabel(
   }
 
   return currentTurn === viewerSide ? 'Your turn' : 'Opponent turn';
+}
+
+function formatSetupTime(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function chatStatusText(state: GameState | undefined, connected: boolean) {
@@ -939,9 +1270,8 @@ function showMutationError(error: unknown) {
     }
 
     if (message.includes('existing data') || message.includes('conflicts')) {
-      toast.error('Move already submitted', {
-        description:
-          'The board is catching up to the last move. Wait a moment before moving again.',
+      toast.error('Move conflict', {
+        description: 'The board changed before that move was applied. Refreshing match state.',
       });
       return;
     }
