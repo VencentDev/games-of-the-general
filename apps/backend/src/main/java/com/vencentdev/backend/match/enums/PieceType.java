@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.entity;
+package com.vencentdev.backend.match.enums;
 
 public enum PieceType {
   FIVE_STAR_GENERAL("Five-Star General", "5G", 14, 1),

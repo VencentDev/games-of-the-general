@@ -1,8 +1,8 @@
 package com.vencentdev.backend.match.repository;
 
 import com.vencentdev.backend.match.entity.GameMatch;
-import com.vencentdev.backend.match.entity.MatchStatus;
-import com.vencentdev.backend.match.entity.MatchVisibility;
+import com.vencentdev.backend.match.enums.MatchStatus;
+import com.vencentdev.backend.match.enums.MatchVisibility;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;

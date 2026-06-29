@@ -26,6 +26,7 @@ For normal business features, prefer this shape:
 - `<feature>/dto/*Request.java`
 - `<feature>/dto/*Response.java`
 - `<feature>/entity/*`
+- `<feature>/enums/*`
 - `<feature>/repository/*Repository.java`
 - `<feature>/mapper/*Mapper.java`
 - `<feature>/validation/*` when validation is feature-specific
@@ -101,6 +102,18 @@ Entities represent database tables and should stay persistence-focused.
 - Keep column names explicit when they differ from Java field names.
 
 Avoid putting API serialization annotations or business workflow methods on entities unless the existing model makes that necessary.
+
+## Enums
+
+Enums represent fixed domain vocabularies and should live beside the feature that owns them.
+
+- Put feature-specific enums in `<feature>/enums/**`, such as `match/enums/PieceType.java` or `match/enums/PlayerSide.java`.
+- Keep enums out of `<feature>/entity/**` unless they are truly nested implementation details of one entity.
+- Do not create a broad top-level `enums` package for unrelated features.
+- Keep enum constant names stable when they are persisted with `@Enumerated(EnumType.STRING)`, because the database stores those string values.
+- Put reusable parsing helpers, such as `@JsonCreator` methods, on the enum when the behavior is specific to that enum.
+
+Use entities for database-backed records, and enums for allowed value sets used by entities, DTOs, services, and repositories.
 
 ## Repositories
 

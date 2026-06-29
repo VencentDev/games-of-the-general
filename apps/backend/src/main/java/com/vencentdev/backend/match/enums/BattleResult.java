@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.entity;
+package com.vencentdev.backend.match.enums;
 
 public enum BattleResult {
   ATTACKER_WINS,

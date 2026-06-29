@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.entity;
+package com.vencentdev.backend.match.enums;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.vencentdev.backend.common.exception.BadRequestException;
