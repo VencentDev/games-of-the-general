@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Check,
@@ -27,7 +28,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/use-toast';
 import { useMatchSocket } from '@/features/lobby/api/match-socket.hook';
 import {
   type BoardSquare,
@@ -48,6 +48,7 @@ import {
   useMovePiece,
   useUpdateSetup,
 } from '@/features/lobby/api/lobby.hooks';
+import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const BOARD_ROWS = 8;
@@ -59,7 +60,6 @@ type EmptySquare = BoardSquare & {
 
 export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const router = useRouter();
-  const { toast } = useToast();
   const match = useMatch(matchId);
   const gameModel = useGameModel();
   const gameState = useGameState(matchId);
@@ -72,14 +72,16 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
+  const moveInFlightRef = useRef(false);
 
   const state = gameState.data;
   const viewerSide = state?.viewerSide;
+  const isViewerTurn = state?.phase === 'PLAYING' && state.currentTurn === viewerSide;
   const selectedPiece = state?.ownPieces.find((piece) => piece.id === selectedPieceId) ?? null;
   const legalMoves = useLegalMoves(
     matchId,
     selectedPieceId,
-    state?.phase === 'PLAYING' && selectedPiece?.status === 'ACTIVE',
+    isViewerTurn && selectedPiece?.status === 'ACTIVE',
   );
 
   const pieceDefinitions = useMemo(() => {
@@ -172,6 +174,14 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     setSelectedPieceId(null);
   }, [selectedPieceId, state?.ownPieces]);
 
+  useEffect(() => {
+    if (state?.phase !== 'PLAYING' || isViewerTurn) {
+      return;
+    }
+
+    setSelectedPieceId(null);
+  }, [isViewerTurn, state?.phase]);
+
   function leave() {
     leaveMatch.mutate(matchId, {
       onSuccess: () => router.push('/lobby'),
@@ -197,6 +207,18 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       square.piece?.visible && square.piece.side === viewerSide ? square.piece : null;
 
     if (visibleOwnPiece) {
+      if (state.phase === 'PLAYING' && !isViewerTurn) {
+        toast.error("It's not your turn yet", {
+          description: 'Wait for your side color on the turn rail before selecting a move.',
+        });
+        return;
+      }
+
+      if (selectedPieceId === visibleOwnPiece.id) {
+        setSelectedPieceId(null);
+        return;
+      }
+
       setSelectedPieceId(visibleOwnPiece.id);
       return;
     }
@@ -211,6 +233,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     if (state.phase === 'PLAYING') {
+      if (!isViewerTurn) {
+        toast.error("It's not your turn yet", {
+          description: 'Wait for your side color on the turn rail before moving.',
+        });
+        return;
+      }
+
       moveSelectedPiece(square.position.row, square.position.column);
     }
   }
@@ -221,8 +250,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     if (!isSetupRow(row, viewerSide)) {
-      toast({
-        title: 'Invalid setup square',
+      toast.error('Invalid setup square', {
         description: `${viewerSide} can only place pieces in its three setup rows.`,
       });
       return;
@@ -238,12 +266,12 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     updateSetup.mutate([{ pieceId: selectedPieceId, row, column }], {
-      onError: (error) => showMutationError(error, toast),
+      onError: showMutationError,
     });
   }
 
   function moveSelectedPiece(row: number, column: number) {
-    if (!selectedPieceId) {
+    if (!selectedPieceId || !isViewerTurn || movePiece.isPending || moveInFlightRef.current) {
       return;
     }
 
@@ -252,11 +280,16 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       return;
     }
 
+    const movingPieceId = selectedPieceId;
+    moveInFlightRef.current = true;
+    setSelectedPieceId(null);
     movePiece.mutate(
-      { pieceId: selectedPieceId, toRow: row, toColumn: column },
+      { pieceId: movingPieceId, toRow: row, toColumn: column },
       {
-        onSuccess: () => setSelectedPieceId(null),
-        onError: (error) => showMutationError(error, toast),
+        onSettled: () => {
+          moveInFlightRef.current = false;
+        },
+        onError: showMutationError,
       },
     );
   }
@@ -267,7 +300,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     updateSetup.mutate([{ pieceId: selectedPieceId, row: null, column: null }], {
-      onError: (error) => showMutationError(error, toast),
+      onError: showMutationError,
     });
   }
 
@@ -290,13 +323,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       }));
 
     updateSetup.mutate(pieces, {
-      onError: (error) => showMutationError(error, toast),
+      onError: showMutationError,
     });
   }
 
   function readySetup() {
     markReady.mutate(undefined, {
-      onError: (error) => showMutationError(error, toast),
+      onError: showMutationError,
     });
   }
 
@@ -335,49 +368,70 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                   )}
                   title={turnRailLabel(state?.currentTurn, viewerSide, state?.phase)}
                 />
-                <div className="grid aspect-[9/8] grid-cols-9 overflow-hidden rounded-md border border-[#6b4d2f] bg-[#e5be84] shadow-inner">
-                  {displayedBoard.map((square) => {
-                    const key = positionKey(square.position.row, square.position.column);
-                    const target = legalTargets.get(key);
-                    const isOwnSetupSquare = Boolean(
-                      viewerSide && isSetupRow(square.position.row, viewerSide),
-                    );
-                    const isSelected =
-                      selectedPiece?.status === 'ACTIVE' &&
-                      selectedPiece.row === square.position.row &&
-                      selectedPiece.column === square.position.column;
+                <div className="relative">
+                  <div className="grid aspect-[9/8] grid-cols-9 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden rounded-md border border-[#6b4d2f] bg-[#e5be84] shadow-inner">
+                    {displayedBoard.map((square) => {
+                      const key = positionKey(square.position.row, square.position.column);
+                      const target = legalTargets.get(key);
+                      const isOwnSetupSquare = Boolean(
+                        viewerSide && isSetupRow(square.position.row, viewerSide),
+                      );
+                      const isSelected =
+                        selectedPiece?.status === 'ACTIVE' &&
+                        selectedPiece.row === square.position.row &&
+                        selectedPiece.column === square.position.column;
 
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        className={cn(
-                          'relative flex min-h-0 min-w-0 items-center justify-center border border-[#8d6842]/70 bg-[#e7c795] outline-none transition focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#f6e09f]',
-                          isOwnSetupSquare && 'bg-[#edcf9c]',
-                          square.piece && 'hover:bg-[#f0d7ad]',
-                          !square.piece && 'hover:bg-[#dfb979]',
-                          target && !target.attack && 'bg-[#8b985d] hover:bg-[#98a86a]',
-                          target?.attack && 'bg-[#a44536] hover:bg-[#b94f3f]',
-                          isSelected && 'z-10 ring-4 ring-[#f6e09f]',
-                        )}
-                        disabled={busy || gameState.isLoading}
-                        onClick={() => handleSquareClick(square)}
-                      >
-                        <span
+                      return (
+                        <button
+                          key={key}
+                          type="button"
                           className={cn(
-                            'flex size-[72%] items-center justify-center rounded-full border-2 text-[clamp(0.6rem,1.35vw,1.05rem)] font-black shadow-md',
-                            pieceTone(square.piece?.side),
-                            !square.piece && 'border-transparent bg-transparent shadow-none',
-                            square.piece &&
-                              !square.piece.visible &&
-                              'border-[#111315] bg-[#202326] text-[#f7ecd8]',
+                            'relative flex min-h-0 min-w-0 items-center justify-center border border-[#8d6842]/70 bg-[#e7c795] outline-none transition focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#f6e09f]',
+                            isOwnSetupSquare && 'bg-[#edcf9c]',
+                            square.piece && 'hover:bg-[#f0d7ad]',
+                            !square.piece && 'hover:bg-[#dfb979]',
+                            target && !target.attack && 'bg-[#8b985d] hover:bg-[#98a86a]',
+                            target?.attack && 'bg-[#a44536] hover:bg-[#b94f3f]',
+                            isSelected && 'z-10 ring-4 ring-[#f6e09f]',
                           )}
+                          disabled={busy || gameState.isLoading || state?.phase === 'GAME_OVER'}
+                          onClick={() => handleSquareClick(square)}
                         >
-                          {squareLabel(square, pieceDefinitions)}
-                        </span>
-                      </button>
-                    );
-                  })}
+                          <span
+                            className={cn(
+                              'flex size-[72%] items-center justify-center rounded-full border-2 text-[clamp(0.6rem,1.35vw,1.05rem)] font-black shadow-md',
+                              pieceTone(square.piece?.side),
+                              !square.piece && 'border-transparent bg-transparent shadow-none',
+                              square.piece &&
+                                !square.piece.visible &&
+                                'border-[#111315] bg-[#202326] text-[#f7ecd8]',
+                            )}
+                          >
+                            {squareLabel(square, pieceDefinitions)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {state?.phase === 'GAME_OVER' ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-6">
+                      <div className="rounded-md border border-white/15 bg-[#111315]/95 px-6 py-4 text-center shadow-2xl">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">
+                          Game Over
+                        </p>
+                        <p className="mt-2 text-2xl font-black">
+                          {state.winnerSide
+                            ? `${state.winnerSide} wins`
+                            : state.drawReason
+                              ? 'Draw'
+                              : 'Match ended'}
+                        </p>
+                        <p className="mt-1 text-sm text-white/65">
+                          {state.winReason ?? state.drawReason ?? 'Final position reached'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -394,126 +448,129 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                   />
                 </div>
               ) : null}
-
-              {state?.phase === 'SETUP' ? (
-                <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-white/60">
-                      Setup {activePlacedCount}/21
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
-                        disabled={!canEditSetup || updateSetup.isPending}
-                        onClick={autoFillSetup}
-                      >
-                        <RotateCcw className="mr-2 size-3.5" />
-                        Auto fill
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
-                        disabled={!selectedPiece || !canEditSetup || updateSetup.isPending}
-                        onClick={unplaceSelectedPiece}
-                      >
-                        Remove
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
-                        disabled={!canMarkReady || markReady.isPending}
-                        onClick={readySetup}
-                      >
-                        {markReady.isPending ? (
-                          <Loader2 className="mr-2 size-3.5 animate-spin" />
-                        ) : (
-                          <Check className="mr-2 size-3.5" />
-                        )}
-                        {ownReady ? 'Ready' : 'Ready'}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-7 gap-2 sm:grid-cols-11">
-                    {(state?.ownPieces ?? []).map((piece) => (
-                      <SetupPieceButton
-                        key={piece.id}
-                        piece={piece}
-                        definition={pieceDefinitions.get(piece.type)}
-                        selected={selectedPieceId === piece.id}
-                        onSelect={() => setSelectedPieceId(piece.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </section>
 
           <aside className="flex min-h-[38rem] min-w-0 flex-col gap-3">
-            <section className="min-h-0 rounded-lg border border-white/15 bg-white/[0.04]">
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <h2 className="font-black">Move History</h2>
-                {busy ? <Loader2 className="size-4 animate-spin text-white/60" /> : null}
-              </div>
-              <div className="max-h-[18rem] overflow-auto">
-                {lastMoves.length > 0 ? (
-                  lastMoves.map((move) => (
-                    <div
-                      key={`${move.moveNumber}-${move.pieceId}`}
-                      className="grid grid-cols-[2.5rem_1fr] gap-3 px-4 py-3 text-sm odd:bg-white/[0.03]"
-                    >
-                      <span className="font-semibold text-white/70">{move.moveNumber}</span>
-                      <span
-                        className={cn(
-                          'truncate',
-                          move.actingSide === viewerSide
-                            ? move.actingSide === 'RED'
-                              ? 'text-[#f36b5c]'
-                              : 'text-[#9bc8ff]'
-                            : 'text-white/55',
-                        )}
-                      >
-                        {moveHistoryLabel(move, viewerSide, pieceDefinitions)}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="px-4 py-5 text-sm text-white/55">No moves yet.</p>
-                )}
-              </div>
-            </section>
-
-            <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-white/15 bg-white/[0.04]">
-              <div className="border-b border-white/10 px-4 py-3">
-                <h2 className="font-black">Chat</h2>
-              </div>
-              <div className="flex-1 space-y-4 overflow-auto p-4 text-sm">
-                <ChatBubble
-                  name="System"
-                  time="now"
-                  message={chatStatusText(state, socket.connected)}
-                />
-              </div>
-              <div className="flex gap-2 border-t border-white/10 p-3">
-                <div className="relative flex-1">
-                  <Input
-                    disabled
-                    placeholder="Type a message..."
-                    className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
-                  />
-                  <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+            {state?.phase === 'SETUP' ? (
+              <section className="flex min-h-0 flex-col rounded-lg border border-white/15 bg-white/[0.04]">
+                <div className="border-b border-white/10 px-4 py-3">
+                  <h2 className="font-black">Preparation</h2>
+                  <p className="mt-1 text-xs text-white/55">{activePlacedCount}/21 placed</p>
                 </div>
-                <Button disabled variant="ghost" className="shrink-0 text-white/45">
-                  <Send className="size-5" />
-                </Button>
-              </div>
-            </section>
+                <div className="space-y-3 p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
+                      disabled={!canEditSetup || updateSetup.isPending}
+                      onClick={autoFillSetup}
+                    >
+                      <RotateCcw className="mr-2 size-3.5" />
+                      Fill
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
+                      disabled={!selectedPiece || !canEditSetup || updateSetup.isPending}
+                      onClick={unplaceSelectedPiece}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 w-full bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+                    disabled={!canMarkReady || markReady.isPending}
+                    onClick={readySetup}
+                  >
+                    {markReady.isPending ? (
+                      <Loader2 className="mr-2 size-3.5 animate-spin" />
+                    ) : (
+                      <Check className="mr-2 size-3.5" />
+                    )}
+                    {ownReady ? 'Ready' : 'Ready'}
+                  </Button>
+                </div>
+                <div className="grid max-h-[31rem] grid-cols-4 gap-2 overflow-auto border-t border-white/10 p-3">
+                  {(state?.ownPieces ?? []).map((piece) => (
+                    <SetupPieceButton
+                      key={piece.id}
+                      piece={piece}
+                      definition={pieceDefinitions.get(piece.type)}
+                      selected={selectedPieceId === piece.id}
+                      onSelect={() => setSelectedPieceId(piece.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <>
+                <section className="min-h-0 rounded-lg border border-white/15 bg-white/[0.04]">
+                  <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                    <h2 className="font-black">Move History</h2>
+                    {busy ? <Loader2 className="size-4 animate-spin text-white/60" /> : null}
+                  </div>
+                  <div className="max-h-[18rem] overflow-auto">
+                    {lastMoves.length > 0 ? (
+                      lastMoves.map((move) => (
+                        <div
+                          key={`${move.moveNumber}-${move.pieceId}`}
+                          className="grid grid-cols-[2.5rem_1fr] gap-3 px-4 py-3 text-sm odd:bg-white/[0.03]"
+                        >
+                          <span className="font-semibold text-white/70">{move.moveNumber}</span>
+                          <span
+                            className={cn(
+                              'truncate',
+                              move.actingSide === viewerSide
+                                ? move.actingSide === 'RED'
+                                  ? 'text-[#f36b5c]'
+                                  : 'text-[#9bc8ff]'
+                                : 'text-white/55',
+                            )}
+                          >
+                            {moveHistoryLabel(move, viewerSide, pieceDefinitions)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="px-4 py-5 text-sm text-white/55">No moves yet.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-white/15 bg-white/[0.04]">
+                  <div className="border-b border-white/10 px-4 py-3">
+                    <h2 className="font-black">Chat</h2>
+                  </div>
+                  <div className="flex-1 space-y-4 overflow-auto p-4 text-sm">
+                    <ChatBubble
+                      name="System"
+                      time="now"
+                      message={chatStatusText(state, socket.connected)}
+                    />
+                  </div>
+                  <div className="flex gap-2 border-t border-white/10 p-3">
+                    <div className="relative flex-1">
+                      <Input
+                        disabled
+                        placeholder="Type a message..."
+                        className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
+                      />
+                      <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+                    </div>
+                    <Button disabled variant="ghost" className="shrink-0 text-white/45">
+                      <Send className="size-5" />
+                    </Button>
+                  </div>
+                </section>
+              </>
+            )}
           </aside>
         </div>
 
@@ -832,9 +889,9 @@ function turnRailTone(
     return 'bg-white/20';
   }
 
-  return currentTurn === viewerSide
-    ? 'bg-[#79d15f] shadow-[0_0_18px_rgba(121,209,95,0.55)]'
-    : 'bg-[#b94f3f] shadow-[0_0_18px_rgba(185,79,63,0.45)]';
+  return currentTurn === 'RED'
+    ? 'bg-[#a83228] shadow-[0_0_18px_rgba(168,50,40,0.55)]'
+    : 'bg-[#203f66] shadow-[0_0_18px_rgba(32,63,102,0.55)]';
 }
 
 function turnRailLabel(
@@ -871,9 +928,29 @@ function chatStatusText(state: GameState | undefined, connected: boolean) {
     : `Game over${state.drawReason ? ` by ${state.drawReason}` : ''}.`;
 }
 
-function showMutationError(error: unknown, toast: ReturnType<typeof useToast>['toast']) {
-  toast({
-    title: 'Action failed',
+function showMutationError(error: unknown) {
+  if (error instanceof ApiError && error.status === 409) {
+    const message = error.message.toLowerCase();
+    if (message.includes('not your turn')) {
+      toast.error("It's not your turn yet", {
+        description: 'Wait for your side color on the turn rail before moving.',
+      });
+      return;
+    }
+
+    if (message.includes('existing data') || message.includes('conflicts')) {
+      toast.error('Move already submitted', {
+        description:
+          'The board is catching up to the last move. Wait a moment before moving again.',
+      });
+      return;
+    }
+
+    toast.error(error.message || 'Action conflicts with the current match state');
+    return;
+  }
+
+  toast.error('Action failed', {
     description: error instanceof Error ? error.message : 'The server rejected that action.',
   });
 }
