@@ -1,9 +1,8 @@
 package com.vencentdev.backend.match.entity;
 
 import com.vencentdev.backend.common.persistence.AuditableEntity;
-import com.vencentdev.backend.match.enums.rules.BattleResult;
 import com.vencentdev.backend.match.enums.rules.PieceType;
-import com.vencentdev.backend.match.enums.state.GamePhase;
+import com.vencentdev.backend.match.enums.state.PieceStatus;
 import com.vencentdev.backend.match.enums.state.PlayerSide;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -26,14 +25,14 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "match_moves")
+@Table(name = "match_pieces")
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
 @EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
-public class MatchMove extends AuditableEntity {
+public class MatchPiece extends AuditableEntity {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
@@ -44,47 +43,24 @@ public class MatchMove extends AuditableEntity {
   @JoinColumn(name = "match_id", nullable = false)
   private GameMatch match;
 
-  @Column(name = "move_number", nullable = false)
-  private Integer moveNumber;
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false)
+  private PlayerSide side;
 
   @Enumerated(EnumType.STRING)
-  @Column(name = "acting_side", nullable = false)
-  private PlayerSide actingSide;
-
-  @Column(name = "piece_id")
-  private UUID pieceId;
+  @Column(nullable = false)
+  private PieceType type;
 
   @Enumerated(EnumType.STRING)
-  @Column(name = "piece_type")
-  private PieceType pieceType;
+  @Column(nullable = false)
+  private PieceStatus status;
 
-  @Column(name = "from_row", nullable = false)
-  private Integer fromRow;
+  @Column(name = "row_index")
+  private Integer row;
 
-  @Column(name = "from_col", nullable = false)
-  private Integer fromCol;
+  @Column(name = "col_index")
+  private Integer column;
 
-  @Column(name = "to_row", nullable = false)
-  private Integer toRow;
-
-  @Column(name = "to_col", nullable = false)
-  private Integer toCol;
-
-  @Column(name = "target_piece_id")
-  private UUID targetPieceId;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "target_piece_type")
-  private PieceType targetPieceType;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "battle_result")
-  private BattleResult battleResult;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "resulting_phase")
-  private GamePhase resultingPhase;
-
-  @Column(length = 120)
-  private String notation;
+  @Column(name = "captured_by_move_number")
+  private Integer capturedByMoveNumber;
 }

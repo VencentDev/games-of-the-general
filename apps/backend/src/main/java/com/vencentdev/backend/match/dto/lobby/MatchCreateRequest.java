@@ -1,6 +1,6 @@
-package com.vencentdev.backend.match.dto;
+package com.vencentdev.backend.match.dto.lobby;
 
-import com.vencentdev.backend.match.enums.MatchVisibility;
+import com.vencentdev.backend.match.enums.lobby.MatchVisibility;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

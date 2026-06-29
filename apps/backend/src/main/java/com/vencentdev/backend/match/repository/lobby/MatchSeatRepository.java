@@ -1,7 +1,7 @@
-package com.vencentdev.backend.match.repository;
+package com.vencentdev.backend.match.repository.lobby;
 
 import com.vencentdev.backend.match.entity.MatchSeat;
-import com.vencentdev.backend.match.enums.PlayerSide;
+import com.vencentdev.backend.match.enums.state.PlayerSide;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

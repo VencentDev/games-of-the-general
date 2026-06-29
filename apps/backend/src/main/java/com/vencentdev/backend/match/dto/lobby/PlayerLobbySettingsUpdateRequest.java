@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.dto;
+package com.vencentdev.backend.match.dto.lobby;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

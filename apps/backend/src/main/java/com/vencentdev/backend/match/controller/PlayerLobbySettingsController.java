@@ -2,8 +2,8 @@ package com.vencentdev.backend.match.controller;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.auth.CurrentUser;
-import com.vencentdev.backend.match.dto.PlayerLobbySettingsResponse;
-import com.vencentdev.backend.match.dto.PlayerLobbySettingsUpdateRequest;
+import com.vencentdev.backend.match.dto.lobby.PlayerLobbySettingsResponse;
+import com.vencentdev.backend.match.dto.lobby.PlayerLobbySettingsUpdateRequest;
 import com.vencentdev.backend.match.service.PlayerLobbySettingsService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;

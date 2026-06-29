@@ -1,9 +1,9 @@
 package com.vencentdev.backend.match.service;
 
-import com.vencentdev.backend.match.dto.GameModelResponse;
-import com.vencentdev.backend.match.dto.PieceDefinitionResponse;
-import com.vencentdev.backend.match.enums.GamePhase;
-import com.vencentdev.backend.match.enums.PieceType;
+import com.vencentdev.backend.match.dto.state.GameModelResponse;
+import com.vencentdev.backend.match.dto.state.PieceDefinitionResponse;
+import com.vencentdev.backend.match.enums.rules.PieceType;
+import com.vencentdev.backend.match.enums.state.GamePhase;
 import java.util.Arrays;
 import org.springframework.stereotype.Service;
 

@@ -1,8 +1,12 @@
 package com.vencentdev.backend.match.entity;
 
 import com.vencentdev.backend.common.persistence.AuditableEntity;
-import com.vencentdev.backend.match.enums.MatchStatus;
-import com.vencentdev.backend.match.enums.MatchVisibility;
+import com.vencentdev.backend.match.enums.lobby.MatchStatus;
+import com.vencentdev.backend.match.enums.lobby.MatchVisibility;
+import com.vencentdev.backend.match.enums.state.DrawReason;
+import com.vencentdev.backend.match.enums.state.GamePhase;
+import com.vencentdev.backend.match.enums.state.PlayerSide;
+import com.vencentdev.backend.match.enums.state.WinReason;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -50,6 +54,17 @@ public class GameMatch extends AuditableEntity {
   @Column(nullable = false)
   private MatchStatus status;
 
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false)
+  private GamePhase phase;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "current_turn")
+  private PlayerSide currentTurn;
+
+  @Column(name = "move_number", nullable = false)
+  private Integer moveNumber;
+
   @Column(nullable = false, length = 80)
   private String mode;
 
@@ -62,8 +77,21 @@ public class GameMatch extends AuditableEntity {
   @Column(name = "winner_user_id")
   private UUID winnerUserId;
 
+  @Enumerated(EnumType.STRING)
+  @Column(name = "winner_side")
+  private PlayerSide winnerSide;
+
+  @Enumerated(EnumType.STRING)
   @Column(name = "win_reason", length = 80)
-  private String winReason;
+  private WinReason winReason;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "draw_reason", length = 80)
+  private DrawReason drawReason;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "resigned_side")
+  private PlayerSide resignedSide;
 
   @Column(name = "started_at")
   private Instant startedAt;

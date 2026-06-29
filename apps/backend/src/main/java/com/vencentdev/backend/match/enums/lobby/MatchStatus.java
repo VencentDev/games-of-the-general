@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.enums;
+package com.vencentdev.backend.match.enums.lobby;
 
 public enum MatchStatus {
   WAITING,

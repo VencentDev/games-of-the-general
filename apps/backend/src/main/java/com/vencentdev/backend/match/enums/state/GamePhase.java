@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.enums;
+package com.vencentdev.backend.match.enums.state;
 
 public enum GamePhase {
   SETUP,

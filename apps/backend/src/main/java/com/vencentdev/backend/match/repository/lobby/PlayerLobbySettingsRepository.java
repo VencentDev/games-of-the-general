@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.repository;
+package com.vencentdev.backend.match.repository.lobby;
 
 import com.vencentdev.backend.match.entity.PlayerLobbySettings;
 import java.util.Optional;

@@ -1,8 +1,8 @@
 package com.vencentdev.backend.match.service;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
-import com.vencentdev.backend.match.dto.MatchCreateRequest;
-import com.vencentdev.backend.match.dto.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
+import com.vencentdev.backend.match.dto.lobby.MatchResponse;
 import java.util.List;
 import java.util.UUID;
 

@@ -4,16 +4,17 @@ import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.common.exception.ConflictException;
 import com.vencentdev.backend.common.exception.ForbiddenException;
 import com.vencentdev.backend.common.exception.ResourceNotFoundException;
-import com.vencentdev.backend.match.dto.MatchCreateRequest;
-import com.vencentdev.backend.match.dto.MatchResponse;
-import com.vencentdev.backend.match.dto.MatchSeatResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
+import com.vencentdev.backend.match.dto.lobby.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchSeatResponse;
 import com.vencentdev.backend.match.entity.GameMatch;
 import com.vencentdev.backend.match.entity.MatchSeat;
-import com.vencentdev.backend.match.enums.MatchStatus;
-import com.vencentdev.backend.match.enums.MatchVisibility;
-import com.vencentdev.backend.match.enums.PlayerSide;
-import com.vencentdev.backend.match.repository.GameMatchRepository;
-import com.vencentdev.backend.match.repository.MatchSeatRepository;
+import com.vencentdev.backend.match.enums.lobby.MatchStatus;
+import com.vencentdev.backend.match.enums.lobby.MatchVisibility;
+import com.vencentdev.backend.match.enums.state.GamePhase;
+import com.vencentdev.backend.match.enums.state.PlayerSide;
+import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
+import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
 import com.vencentdev.backend.user.service.UserService;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -57,6 +58,8 @@ public class MatchServiceImpl implements MatchService {
                 .name(request.name().trim())
                 .visibility(request.visibility())
                 .status(MatchStatus.WAITING)
+                .phase(GamePhase.SETUP)
+                .moveNumber(0)
                 .mode(request.mode().trim())
                 .preparationSeconds(request.preparationSeconds())
                 .inviteCode(uniqueInviteCode())
@@ -217,17 +220,27 @@ public class MatchServiceImpl implements MatchService {
         match.getName(),
         match.getVisibility().name(),
         match.getStatus().name(),
+        match.getPhase().name(),
+        enumName(match.getCurrentTurn()),
+        match.getMoveNumber(),
         match.getMode(),
         match.getPreparationSeconds(),
         match.getInviteCode(),
         "/lobby/invite/" + match.getInviteCode(),
         match.getHostUserId(),
         match.getWinnerUserId(),
-        match.getWinReason(),
+        enumName(match.getWinnerSide()),
+        enumName(match.getWinReason()),
+        enumName(match.getDrawReason()),
+        enumName(match.getResignedSide()),
         match.getCreatedAt(),
         match.getStartedAt(),
         match.getFinishedAt(),
         seats);
+  }
+
+  private String enumName(Enum<?> value) {
+    return value == null ? null : value.name();
   }
 
   private String uniqueInviteCode() {

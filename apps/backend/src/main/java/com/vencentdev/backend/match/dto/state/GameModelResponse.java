@@ -1,4 +1,4 @@
-package com.vencentdev.backend.match.dto;
+package com.vencentdev.backend.match.dto.state;
 
 import java.util.List;
 
