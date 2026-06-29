@@ -34,6 +34,8 @@ export type MatchSummary = {
   resignedSide: PlayerSide | null;
   createdAt: string | null;
   startedAt: string | null;
+  setupStartedAt: string | null;
+  setupEndsAt: string | null;
   finishedAt: string | null;
   seats: MatchSeat[];
 };
@@ -123,6 +125,8 @@ export type GameState = {
   winnerSide: PlayerSide | null;
   winReason: string | null;
   drawReason: string | null;
+  setupStartedAt: string | null;
+  setupEndsAt: string | null;
   board: BoardSquare[];
   ownPieces: PieceInstance[];
   capturedPieces: CapturedPiece[];
@@ -333,6 +337,10 @@ export function useUpdateSetup(matchId: string) {
       queryClient.setQueryData(lobbyKeys.state(matchId), response.state);
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
     },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.state(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+    },
   });
 }
 
@@ -382,11 +390,13 @@ export function useMovePiece(matchId: string) {
       queryClient.setQueryData(lobbyKeys.state(matchId), response.state);
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(matchId) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      void queryClient.invalidateQueries({ queryKey: ['lobby', 'match', matchId, 'legal-moves'] });
     },
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.state(matchId) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(matchId) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      void queryClient.invalidateQueries({ queryKey: ['lobby', 'match', matchId, 'legal-moves'] });
     },
   });
 }
