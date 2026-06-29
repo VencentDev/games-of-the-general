@@ -69,6 +69,12 @@ export function useMatchSocket(matchId: string | null) {
           void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
         }
 
+        if (event.type !== 'PLAYER_PRESENT') {
+          void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(event.matchId) });
+          void queryClient.invalidateQueries({ queryKey: lobbyKeys.state(event.matchId) });
+          void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(event.matchId) });
+        }
+
         setEvents((current) => [event, ...current].slice(0, 20));
       });
       client.publish({ destination: `/app/matches/${matchId}/presence`, body: '{}' });

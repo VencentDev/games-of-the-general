@@ -1,8 +1,8 @@
 package com.vencentdev.backend.match.service;
 
-import com.vencentdev.backend.match.dto.MatchPresenceMessage;
-import com.vencentdev.backend.match.dto.MatchRealtimeEvent;
-import com.vencentdev.backend.match.dto.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchPresenceMessage;
+import com.vencentdev.backend.match.dto.lobby.MatchRealtimeEvent;
+import com.vencentdev.backend.match.dto.lobby.MatchResponse;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -26,6 +26,11 @@ public class MatchRealtimeService {
     messagingTemplate.convertAndSend(
         matchTopic(matchId),
         new MatchPresenceMessage("PLAYER_PRESENT", matchId, subject, Instant.now()));
+  }
+
+  public void publishMatchSignal(String type, UUID matchId, String subject) {
+    messagingTemplate.convertAndSend(
+        matchTopic(matchId), new MatchPresenceMessage(type, matchId, subject, Instant.now()));
   }
 
   private String matchTopic(UUID matchId) {

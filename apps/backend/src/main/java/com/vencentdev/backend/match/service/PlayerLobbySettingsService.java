@@ -1,8 +1,8 @@
 package com.vencentdev.backend.match.service;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
-import com.vencentdev.backend.match.dto.PlayerLobbySettingsResponse;
-import com.vencentdev.backend.match.dto.PlayerLobbySettingsUpdateRequest;
+import com.vencentdev.backend.match.dto.lobby.PlayerLobbySettingsResponse;
+import com.vencentdev.backend.match.dto.lobby.PlayerLobbySettingsUpdateRequest;
 
 public interface PlayerLobbySettingsService {
 

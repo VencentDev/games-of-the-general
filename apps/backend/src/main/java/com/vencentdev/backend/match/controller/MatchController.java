@@ -2,8 +2,8 @@ package com.vencentdev.backend.match.controller;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.auth.CurrentUser;
-import com.vencentdev.backend.match.dto.MatchCreateRequest;
-import com.vencentdev.backend.match.dto.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
+import com.vencentdev.backend.match.dto.lobby.MatchResponse;
 import com.vencentdev.backend.match.service.MatchService;
 import jakarta.validation.Valid;
 import java.util.List;

@@ -1,6 +1,7 @@
 package com.vencentdev.backend.match.entity;
 
 import com.vencentdev.backend.common.persistence.AuditableEntity;
+import com.vencentdev.backend.match.enums.state.PlayerSide;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

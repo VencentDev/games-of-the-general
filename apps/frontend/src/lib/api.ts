@@ -15,6 +15,10 @@ export class ApiError extends Error {
   }
 }
 
+type ApiErrorPayload = {
+  message?: string;
+};
+
 async function apiFetch<T>(
   token: string | undefined,
   path: string,
@@ -39,7 +43,15 @@ async function apiFetch<T>(
       payload = undefined;
     }
 
-    throw new ApiError(res.status, payload, `api_${res.status}`);
+    const message: string =
+      payload &&
+      typeof payload === 'object' &&
+      'message' in payload &&
+      typeof (payload as ApiErrorPayload).message === 'string'
+        ? ((payload as ApiErrorPayload).message ?? `api_${res.status}`)
+        : `api_${res.status}`;
+
+    throw new ApiError(res.status, payload, message);
   }
 
   if (res.status === 204) {

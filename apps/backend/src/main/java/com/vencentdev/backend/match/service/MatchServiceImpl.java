@@ -4,16 +4,17 @@ import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.common.exception.ConflictException;
 import com.vencentdev.backend.common.exception.ForbiddenException;
 import com.vencentdev.backend.common.exception.ResourceNotFoundException;
-import com.vencentdev.backend.match.dto.MatchCreateRequest;
-import com.vencentdev.backend.match.dto.MatchResponse;
-import com.vencentdev.backend.match.dto.MatchSeatResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
+import com.vencentdev.backend.match.dto.lobby.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchSeatResponse;
 import com.vencentdev.backend.match.entity.GameMatch;
 import com.vencentdev.backend.match.entity.MatchSeat;
-import com.vencentdev.backend.match.entity.MatchStatus;
-import com.vencentdev.backend.match.entity.MatchVisibility;
-import com.vencentdev.backend.match.entity.PlayerSide;
-import com.vencentdev.backend.match.repository.GameMatchRepository;
-import com.vencentdev.backend.match.repository.MatchSeatRepository;
+import com.vencentdev.backend.match.enums.lobby.MatchStatus;
+import com.vencentdev.backend.match.enums.lobby.MatchVisibility;
+import com.vencentdev.backend.match.enums.state.GamePhase;
+import com.vencentdev.backend.match.enums.state.PlayerSide;
+import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
+import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
 import com.vencentdev.backend.user.service.UserService;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -33,16 +34,19 @@ public class MatchServiceImpl implements MatchService {
   private final GameMatchRepository matchRepository;
   private final MatchSeatRepository seatRepository;
   private final MatchRealtimeService realtimeService;
+  private final SetupTimerService setupTimerService;
   private final UserService userService;
 
   public MatchServiceImpl(
       GameMatchRepository matchRepository,
       MatchSeatRepository seatRepository,
       MatchRealtimeService realtimeService,
+      SetupTimerService setupTimerService,
       UserService userService) {
     this.matchRepository = matchRepository;
     this.seatRepository = seatRepository;
     this.realtimeService = realtimeService;
+    this.setupTimerService = setupTimerService;
     this.userService = userService;
   }
 
@@ -57,6 +61,8 @@ public class MatchServiceImpl implements MatchService {
                 .name(request.name().trim())
                 .visibility(request.visibility())
                 .status(MatchStatus.WAITING)
+                .phase(GamePhase.SETUP)
+                .moveNumber(0)
                 .mode(request.mode().trim())
                 .preparationSeconds(request.preparationSeconds())
                 .inviteCode(uniqueInviteCode())
@@ -88,20 +94,26 @@ public class MatchServiceImpl implements MatchService {
   }
 
   @Override
-  @Transactional(readOnly = true)
+  @Transactional
   public MatchResponse get(AuthenticatedUser principal, UUID matchId) {
     UUID userId = userService.resolveInternalId(principal);
     GameMatch match = findMatch(matchId);
+    setupTimerService.applyExpiredSetup(match);
     requireVisibleToUser(match, userId);
     return toResponse(match);
   }
 
   @Override
-  @Transactional(readOnly = true)
+  @Transactional
   public MatchResponse getByInviteCode(AuthenticatedUser principal, String inviteCode) {
     userService.resolveInternalId(principal);
     return matchRepository
         .findByInviteCode(inviteCode.toUpperCase(Locale.ROOT))
+        .map(
+            match -> {
+              setupTimerService.applyExpiredSetup(match);
+              return match;
+            })
         .map(this::toResponse)
         .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
   }
@@ -113,6 +125,7 @@ public class MatchServiceImpl implements MatchService {
     GameMatch match = findMatch(matchId);
 
     if (seatRepository.existsByMatchIdAndUserId(match.getId(), userId)) {
+      setupTimerService.applyExpiredSetup(match);
       return toResponse(match);
     }
 
@@ -133,6 +146,7 @@ public class MatchServiceImpl implements MatchService {
             .joinedAt(Instant.now())
             .build());
     match.setStatus(MatchStatus.SETUP);
+    setupTimerService.startSetupTimer(match);
 
     MatchResponse response = toResponse(match);
     realtimeService.publishMatchEvent("PLAYER_JOINED", response);
@@ -156,6 +170,12 @@ public class MatchServiceImpl implements MatchService {
       match.setStatus(MatchStatus.CANCELLED);
     } else if (match.getStatus() == MatchStatus.SETUP) {
       match.setStatus(MatchStatus.WAITING);
+      match.setSetupStartedAt(null);
+      match.setSetupEndsAt(null);
+      match.setCurrentTurn(null);
+      seatRepository
+          .findByMatchIdOrderBySideAsc(match.getId())
+          .forEach(matchSeat -> matchSeat.setReady(false));
     }
 
     MatchResponse response = toResponse(match);
@@ -217,17 +237,29 @@ public class MatchServiceImpl implements MatchService {
         match.getName(),
         match.getVisibility().name(),
         match.getStatus().name(),
+        match.getPhase().name(),
+        enumName(match.getCurrentTurn()),
+        match.getMoveNumber(),
         match.getMode(),
         match.getPreparationSeconds(),
         match.getInviteCode(),
         "/lobby/invite/" + match.getInviteCode(),
         match.getHostUserId(),
         match.getWinnerUserId(),
-        match.getWinReason(),
+        enumName(match.getWinnerSide()),
+        enumName(match.getWinReason()),
+        enumName(match.getDrawReason()),
+        enumName(match.getResignedSide()),
         match.getCreatedAt(),
         match.getStartedAt(),
+        match.getSetupStartedAt(),
+        match.getSetupEndsAt(),
         match.getFinishedAt(),
         seats);
+  }
+
+  private String enumName(Enum<?> value) {
+    return value == null ? null : value.name();
   }
 
   private String uniqueInviteCode() {

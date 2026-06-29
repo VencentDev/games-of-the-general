@@ -1,10 +1,10 @@
 package com.vencentdev.backend.match.service;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
-import com.vencentdev.backend.match.dto.PlayerLobbySettingsResponse;
-import com.vencentdev.backend.match.dto.PlayerLobbySettingsUpdateRequest;
+import com.vencentdev.backend.match.dto.lobby.PlayerLobbySettingsResponse;
+import com.vencentdev.backend.match.dto.lobby.PlayerLobbySettingsUpdateRequest;
 import com.vencentdev.backend.match.entity.PlayerLobbySettings;
-import com.vencentdev.backend.match.repository.PlayerLobbySettingsRepository;
+import com.vencentdev.backend.match.repository.lobby.PlayerLobbySettingsRepository;
 import com.vencentdev.backend.user.service.UserService;
 import java.util.UUID;
 import org.springframework.stereotype.Service;

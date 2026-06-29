@@ -1,6 +1,10 @@
 package com.vencentdev.backend.match.entity;
 
 import com.vencentdev.backend.common.persistence.AuditableEntity;
+import com.vencentdev.backend.match.enums.rules.BattleResult;
+import com.vencentdev.backend.match.enums.rules.PieceType;
+import com.vencentdev.backend.match.enums.state.GamePhase;
+import com.vencentdev.backend.match.enums.state.PlayerSide;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -47,6 +51,13 @@ public class MatchMove extends AuditableEntity {
   @Column(name = "acting_side", nullable = false)
   private PlayerSide actingSide;
 
+  @Column(name = "piece_id")
+  private UUID pieceId;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "piece_type")
+  private PieceType pieceType;
+
   @Column(name = "from_row", nullable = false)
   private Integer fromRow;
 
@@ -59,9 +70,20 @@ public class MatchMove extends AuditableEntity {
   @Column(name = "to_col", nullable = false)
   private Integer toCol;
 
+  @Column(name = "target_piece_id")
+  private UUID targetPieceId;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "target_piece_type")
+  private PieceType targetPieceType;
+
   @Enumerated(EnumType.STRING)
   @Column(name = "battle_result")
   private BattleResult battleResult;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "resulting_phase")
+  private GamePhase resultingPhase;
 
   @Column(length = 120)
   private String notation;

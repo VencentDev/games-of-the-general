@@ -19,15 +19,23 @@ export type MatchSummary = {
   name: string;
   visibility: MatchVisibility;
   status: 'WAITING' | 'SETUP' | 'PLAYING' | 'FINISHED' | 'CANCELLED';
+  phase: 'SETUP' | 'PLAYING' | 'GAME_OVER';
+  currentTurn: PlayerSide | null;
+  moveNumber: number;
   mode: string;
   preparationSeconds: number;
   inviteCode: string;
   inviteUrl: string;
   hostUserId: string;
   winnerUserId: string | null;
+  winnerSide: PlayerSide | null;
   winReason: string | null;
+  drawReason: string | null;
+  resignedSide: PlayerSide | null;
   createdAt: string | null;
   startedAt: string | null;
+  setupStartedAt: string | null;
+  setupEndsAt: string | null;
   finishedAt: string | null;
   seats: MatchSeat[];
 };
@@ -38,6 +46,129 @@ export type GameModel = {
   setupRowsPerPlayer: number;
   piecesPerPlayer: number;
   vacantSetupSquares: number;
+  phases: string[];
+  movement: string[];
+  pieces: PieceDefinition[];
+};
+
+export type PlayerSide = 'RED' | 'BLUE';
+export type PieceStatus = 'UNPLACED' | 'ACTIVE' | 'CAPTURED';
+export type PieceType =
+  | 'FIVE_STAR_GENERAL'
+  | 'FOUR_STAR_GENERAL'
+  | 'THREE_STAR_GENERAL'
+  | 'TWO_STAR_GENERAL'
+  | 'ONE_STAR_GENERAL'
+  | 'COLONEL'
+  | 'LT_COLONEL'
+  | 'MAJOR'
+  | 'CAPTAIN'
+  | 'FIRST_LIEUTENANT'
+  | 'SECOND_LIEUTENANT'
+  | 'SERGEANT'
+  | 'SPY'
+  | 'PRIVATE'
+  | 'FLAG';
+
+export type PieceDefinition = {
+  type: PieceType;
+  label: string;
+  abbreviation: string;
+  rank: number;
+  count: number;
+};
+
+export type BoardPosition = {
+  row: number;
+  column: number;
+};
+
+export type VisiblePiece = {
+  id: string;
+  side: PlayerSide;
+  visible: boolean;
+  type: PieceType | null;
+  label: string | null;
+  abbreviation: string | null;
+  rank: number | null;
+};
+
+export type BoardSquare = {
+  position: BoardPosition;
+  piece: VisiblePiece | null;
+};
+
+export type PieceInstance = {
+  id: string;
+  side: PlayerSide;
+  type: PieceType;
+  status: PieceStatus;
+  row: number | null;
+  column: number | null;
+};
+
+export type CapturedPiece = {
+  pieceId: string;
+  side: PlayerSide;
+  type: PieceType;
+  capturedBySide: PlayerSide;
+  capturedOnMoveNumber: number | null;
+};
+
+export type GameState = {
+  matchId: string;
+  phase: 'SETUP' | 'PLAYING' | 'GAME_OVER';
+  status: MatchSummary['status'];
+  viewerSide: PlayerSide;
+  currentTurn: PlayerSide | null;
+  moveNumber: number;
+  winnerSide: PlayerSide | null;
+  winReason: string | null;
+  drawReason: string | null;
+  setupStartedAt: string | null;
+  setupEndsAt: string | null;
+  board: BoardSquare[];
+  ownPieces: PieceInstance[];
+  capturedPieces: CapturedPiece[];
+};
+
+export type SetupPieceInput = {
+  pieceId: string;
+  row: number | null;
+  column: number | null;
+};
+
+export type LegalMove = {
+  position: BoardPosition;
+  attack: boolean;
+};
+
+export type MoveHistory = {
+  moveNumber: number;
+  actingSide: PlayerSide;
+  pieceId: string;
+  pieceType: PieceType | null;
+  fromRow: number;
+  fromColumn: number;
+  toRow: number;
+  toColumn: number;
+  targetPieceId: string | null;
+  targetPieceType: PieceType | null;
+  battleResult: string | null;
+  resultingPhase: string | null;
+  notation: string | null;
+  createdAt: string | null;
+};
+
+export type MoveInput = {
+  pieceId: string;
+  toRow: number;
+  toColumn: number;
+};
+
+export type MoveResult = {
+  state: GameState;
+  move: MoveHistory;
 };
 
 export type PlayerLobbySettings = {
@@ -60,6 +191,10 @@ export const lobbyKeys = {
   gameModel: ['lobby', 'game-model'] as const,
   settings: ['lobby', 'settings'] as const,
   match: (matchId: string) => ['lobby', 'match', matchId] as const,
+  state: (matchId: string) => ['lobby', 'match', matchId, 'state'] as const,
+  moves: (matchId: string) => ['lobby', 'match', matchId, 'moves'] as const,
+  legalMoves: (matchId: string, pieceId: string | null) =>
+    ['lobby', 'match', matchId, 'legal-moves', pieceId] as const,
 };
 
 export function usePublicMatches() {
@@ -100,6 +235,20 @@ export function useMatch(matchId: string) {
     queryKey: lobbyKeys.match(matchId),
     queryFn: () => clientApi<MatchSummary>(session?.accessToken, `/api/v1/matches/${matchId}`),
     enabled: !!session?.accessToken && !!matchId,
+    refetchInterval: (query) => (query.state.data?.phase === 'GAME_OVER' ? false : 2_500),
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useGameState(matchId: string) {
+  const { data: session } = useSession();
+
+  return useQuery({
+    queryKey: lobbyKeys.state(matchId),
+    queryFn: () => clientApi<GameState>(session?.accessToken, `/api/v1/matches/${matchId}/state`),
+    enabled: !!session?.accessToken && !!matchId,
+    refetchInterval: (query) => (query.state.data?.phase === 'GAME_OVER' ? false : 1_500),
+    refetchIntervalInBackground: true,
   });
 }
 
@@ -171,5 +320,96 @@ export function useLeaveMatch() {
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
     },
+  });
+}
+
+export function useUpdateSetup(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (pieces: SetupPieceInput[]) =>
+      clientApi<{ state: GameState }>(session?.accessToken, `/api/v1/matches/${matchId}/setup`, {
+        method: 'PUT',
+        body: JSON.stringify({ pieces }),
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(lobbyKeys.state(matchId), response.state);
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.state(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+    },
+  });
+}
+
+export function useMarkReady(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      clientApi<{ state: GameState }>(
+        session?.accessToken,
+        `/api/v1/matches/${matchId}/setup/ready`,
+        { method: 'POST' },
+      ),
+    onSuccess: (response) => {
+      queryClient.setQueryData(lobbyKeys.state(matchId), response.state);
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+    },
+  });
+}
+
+export function useLegalMoves(matchId: string, pieceId: string | null, enabled: boolean) {
+  const { data: session } = useSession();
+
+  return useQuery({
+    queryKey: lobbyKeys.legalMoves(matchId, pieceId),
+    queryFn: () =>
+      clientApi<LegalMove[]>(
+        session?.accessToken,
+        `/api/v1/matches/${matchId}/pieces/${pieceId}/legal-moves`,
+      ),
+    enabled: !!session?.accessToken && !!matchId && !!pieceId && enabled,
+  });
+}
+
+export function useMovePiece(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: MoveInput) =>
+      clientApi<MoveResult>(session?.accessToken, `/api/v1/matches/${matchId}/moves`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(lobbyKeys.state(matchId), response.state);
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      void queryClient.invalidateQueries({ queryKey: ['lobby', 'match', matchId, 'legal-moves'] });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.state(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      void queryClient.invalidateQueries({ queryKey: ['lobby', 'match', matchId, 'legal-moves'] });
+    },
+  });
+}
+
+export function useMoveHistory(matchId: string) {
+  const { data: session } = useSession();
+
+  return useQuery({
+    queryKey: lobbyKeys.moves(matchId),
+    queryFn: () =>
+      clientApi<MoveHistory[]>(session?.accessToken, `/api/v1/matches/${matchId}/moves`),
+    enabled: !!session?.accessToken && !!matchId,
+    refetchInterval: 1_500,
+    refetchIntervalInBackground: true,
   });
 }

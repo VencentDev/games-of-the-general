@@ -10,9 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.vencentdev.backend.IntegrationTestBase;
-import com.vencentdev.backend.match.repository.GameMatchRepository;
-import com.vencentdev.backend.match.repository.MatchSeatRepository;
-import com.vencentdev.backend.match.repository.PlayerLobbySettingsRepository;
+import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
+import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
+import com.vencentdev.backend.match.repository.lobby.PlayerLobbySettingsRepository;
 import com.vencentdev.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
