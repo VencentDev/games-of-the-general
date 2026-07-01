@@ -82,6 +82,10 @@ Keep these layers separate. Do not copy API entities into Zustand, and do not us
 
 See [`docs/google-github-oauth-setup.md`](docs/google-github-oauth-setup.md) for the required Google/GitHub OAuth apps, callback URLs, and local environment variables.
 
+## Free Deployment
+
+See [`docs/free-deployment-guide.md`](docs/free-deployment-guide.md) for a free-friendly deployment path using Vercel for the Next.js frontend, Render for the Spring Boot backend, and Neon for Postgres.
+
 ## Testing
 
 ```bash
