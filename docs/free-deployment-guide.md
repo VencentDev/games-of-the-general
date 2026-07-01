@@ -291,6 +291,13 @@ Build Command: pnpm --filter @app/frontend build
 
 If Vercel cannot detect pnpm correctly, make sure the repository root contains [`pnpm-lock.yaml`](../pnpm-lock.yaml) and [`pnpm-workspace.yaml`](../pnpm-workspace.yaml).
 
+If Vercel reports that it cannot find `@app/api-types`, make sure the frontend package has run its `prebuild` script. The frontend build depends on generated OpenAPI types from [`packages/api-types/openapi.json`](../packages/api-types/openapi.json):
+
+```bash
+pnpm --filter @app/api-types generate:types
+pnpm --filter @app/frontend build
+```
+
 ## Final Environment Checklist
 
 Render backend:
