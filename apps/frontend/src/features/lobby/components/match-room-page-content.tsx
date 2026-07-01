@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image, { type StaticImageData } from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -29,19 +29,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import blueWonImage from '@/assets/gg assets/blue won.png';
 import captainImage from '@/assets/gg assets/Captain.png';
 import colonelImage from '@/assets/gg assets/colonel.png';
+import drawImage from '@/assets/gg assets/draw.png';
 import firstLieutenantImage from '@/assets/gg assets/1st Lieutenant.png';
 import fiveStarImage from '@/assets/gg assets/5star.jpg';
 import flagImage from '@/assets/gg assets/flag.png';
 import fourStarImage from '@/assets/gg assets/4star.png';
+import gameOverLostImage from '@/assets/gg assets/gameover you lost.png';
+import gameOverWinImage from '@/assets/gg assets/gameover you win.png';
 import lieutenantColonelImage from '@/assets/gg assets/Lieutenant Colonel.png';
 import lostImage from '@/assets/gg assets/lost.png';
 import majorImage from '@/assets/gg assets/Major.png';
 import oneStarImage from '@/assets/gg assets/1star.png';
 import privateImage from '@/assets/gg assets/private.png';
-import redWonImage from '@/assets/gg assets/Red won.png';
 import secondLieutenantImage from '@/assets/gg assets/2nd Lieutenant.png';
 import sergeantImage from '@/assets/gg assets/Sergeant.png';
 import spyImage from '@/assets/gg assets/spy.png';
@@ -58,6 +59,7 @@ import {
   type PieceInstance,
   type PieceType,
   type PlayerSide,
+  type SetupPieceInput,
   useCreateMatch,
   useGameModel,
   useGameState,
@@ -119,7 +121,12 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     alt: string;
     durationMs: number;
   } | null>(null);
+  const [movementOverlay, setMovementOverlay] = useState<{
+    key: string;
+    move: MoveHistory;
+  } | null>(null);
   const [gameOverDialogOpen, setGameOverDialogOpen] = useState(false);
+  const [draggingSetupPieceId, setDraggingSetupPieceId] = useState<string | null>(null);
   const moveInFlightRef = useRef(false);
   const lastSeenMoveNumberRef = useRef(0);
   const gameOverShownRef = useRef(false);
@@ -264,9 +271,16 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     const shouldIgnoreInitialHistory = lastSeenMoveNumberRef.current === 0;
     lastSeenMoveNumberRef.current = latestMove.moveNumber;
 
+    if (shouldIgnoreInitialHistory || state?.phase === 'GAME_OVER') {
+      return;
+    }
+
+    setMovementOverlay({
+      key: `${latestMove.moveNumber}-${latestMove.pieceId}`,
+      move: latestMove,
+    });
+
     if (
-      shouldIgnoreInitialHistory ||
-      state?.phase === 'GAME_OVER' ||
       latestMove.resultingPhase === 'GAME_OVER' ||
       !latestMove.targetPieceId ||
       !latestMove.battleResult
@@ -280,8 +294,8 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     setResultOverlay({
-      image: outcome === 'WON' ? wonImage : lostImage,
-      alt: outcome === 'WON' ? 'Won capture' : 'Lost capture',
+      image: outcome === 'WON' ? wonImage : outcome === 'LOST' ? lostImage : drawImage,
+      alt: outcome === 'WON' ? 'Won capture' : outcome === 'LOST' ? 'Lost capture' : 'Draw capture',
       durationMs: 1_500,
     });
   }, [moveHistory.data, state?.phase, viewerSide]);
@@ -292,10 +306,10 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     gameOverShownRef.current = true;
-    const winnerImage = state.winnerSide === 'BLUE' ? blueWonImage : redWonImage;
+    const viewerWon = state.winnerSide === state.viewerSide;
     setResultOverlay({
-      image: winnerImage,
-      alt: state.winnerSide === 'BLUE' ? 'Blue won' : 'Red won',
+      image: viewerWon ? gameOverWinImage : gameOverLostImage,
+      alt: viewerWon ? 'Game over, you win' : 'Game over, you lost',
       durationMs: 5_000,
     });
 
@@ -314,6 +328,15 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     const timeout = window.setTimeout(() => setResultOverlay(null), resultOverlay.durationMs);
     return () => window.clearTimeout(timeout);
   }, [resultOverlay]);
+
+  useEffect(() => {
+    if (!movementOverlay) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setMovementOverlay(null), 980);
+    return () => window.clearTimeout(timeout);
+  }, [movementOverlay]);
 
   function leave() {
     leaveMatch.mutate(matchId, {
@@ -404,6 +427,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     updateSetup.mutate([{ pieceId: selectedPieceId, row, column }], {
+      onSuccess: () => setSelectedPieceId(null),
       onError: showMutationError,
     });
   }
@@ -433,10 +457,91 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
         },
       ],
       {
-        onSuccess: () => setSelectedPieceId(selected.id),
+        onSuccess: () => setSelectedPieceId(null),
         onError: showMutationError,
       },
     );
+  }
+
+  function moveSetupPieceToSquare(pieceId: string, row: number, column: number) {
+    if (!state || !viewerSide || !canEditSetup || updateSetup.isPending) {
+      return;
+    }
+
+    if (!isSetupRow(row, viewerSide)) {
+      toast.error('Invalid setup square', {
+        description: `${viewerSide} can only place pieces in its three setup rows.`,
+      });
+      return;
+    }
+
+    const movingPiece = state.ownPieces.find((piece) => piece.id === pieceId);
+    if (!movingPiece || movingPiece.status === 'CAPTURED') {
+      return;
+    }
+
+    const targetPiece = state.ownPieces.find(
+      (piece) => piece.status === 'ACTIVE' && piece.row === row && piece.column === column,
+    );
+
+    if (targetPiece?.id === movingPiece.id) {
+      setSelectedPieceId(null);
+      return;
+    }
+
+    const pieces: SetupPieceInput[] = [
+      {
+        pieceId: movingPiece.id,
+        row,
+        column,
+      },
+    ];
+
+    if (targetPiece) {
+      pieces.push({
+        pieceId: targetPiece.id,
+        row: movingPiece.row,
+        column: movingPiece.column,
+      });
+    }
+
+    updateSetup.mutate(pieces, {
+      onSuccess: () => setSelectedPieceId(null),
+      onError: showMutationError,
+    });
+  }
+
+  function handleSetupPieceDragStart(event: DragEvent<HTMLElement>, pieceId: string) {
+    if (!canEditSetup) {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', pieceId);
+    setDraggingSetupPieceId(pieceId);
+    setSelectedPieceId(pieceId);
+  }
+
+  function handleSetupDragOver(event: DragEvent<HTMLElement>, row: number) {
+    if (!viewerSide || !canEditSetup || !isSetupRow(row, viewerSide)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleSetupDrop(event: DragEvent<HTMLElement>, row: number, column: number) {
+    event.preventDefault();
+    const pieceId = event.dataTransfer.getData('text/plain') || draggingSetupPieceId;
+    setDraggingSetupPieceId(null);
+
+    if (!pieceId) {
+      return;
+    }
+
+    moveSetupPieceToSquare(pieceId, row, column);
   }
 
   function moveSelectedPiece(row: number, column: number) {
@@ -469,6 +574,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }
 
     updateSetup.mutate([{ pieceId: selectedPieceId, row: null, column: null }], {
+      onSuccess: () => setSelectedPieceId(null),
       onError: showMutationError,
     });
   }
@@ -492,6 +598,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       }));
 
     updateSetup.mutate(pieces, {
+      onSuccess: () => setSelectedPieceId(null),
       onError: showMutationError,
     });
   }
@@ -590,7 +697,24 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                             state?.phase === 'GAME_OVER' ||
                             setupLocked
                           }
+                          draggable={
+                            canEditSetup &&
+                            Boolean(square.piece?.visible && square.piece.side === viewerSide)
+                          }
                           onClick={() => handleSquareClick(square)}
+                          onDragEnd={() => setDraggingSetupPieceId(null)}
+                          onDragOver={(event) => handleSetupDragOver(event, square.position.row)}
+                          onDragStart={(event) => {
+                            if (!square.piece?.visible || square.piece.side !== viewerSide) {
+                              event.preventDefault();
+                              return;
+                            }
+
+                            handleSetupPieceDragStart(event, square.piece.id);
+                          }}
+                          onDrop={(event) =>
+                            handleSetupDrop(event, square.position.row, square.position.column)
+                          }
                         >
                           <span
                             className={cn(
@@ -612,6 +736,14 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       );
                     })}
                   </div>
+                  {movementOverlay && viewerSide ? (
+                    <MoveAnimationOverlay
+                      key={movementOverlay.key}
+                      move={movementOverlay.move}
+                      viewerSide={viewerSide}
+                      definitions={pieceDefinitions}
+                    />
+                  ) : null}
                   {resultOverlay ? (
                     <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-transparent p-6">
                       <Image
@@ -716,6 +848,8 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       selected={selectedPieceId === piece.id}
                       disabled={!canEditSetup}
                       onSelect={() => setSelectedPieceId(piece.id)}
+                      onDragEnd={() => setDraggingSetupPieceId(null)}
+                      onDragStart={(event) => handleSetupPieceDragStart(event, piece.id)}
                     />
                   ))}
                 </div>
@@ -1014,12 +1148,16 @@ function SetupPieceButton({
   selected,
   disabled,
   onSelect,
+  onDragEnd,
+  onDragStart,
 }: {
   piece: PieceInstance;
   definition: PieceDefinition | undefined;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  onDragEnd: () => void;
+  onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
 }) {
   const isDisabled = disabled || piece.status === 'CAPTURED';
 
@@ -1036,8 +1174,11 @@ function SetupPieceButton({
         isDisabled && 'cursor-not-allowed opacity-45',
       )}
       disabled={isDisabled}
+      draggable={!isDisabled}
       title={definition?.label ?? piece.type}
       onClick={onSelect}
+      onDragEnd={onDragEnd}
+      onDragStart={onDragStart}
     >
       <Image
         src={PIECE_IMAGES[piece.type]}
@@ -1045,6 +1186,83 @@ function SetupPieceButton({
         className="h-[82%] w-[90%] rounded-sm object-cover"
       />
     </button>
+  );
+}
+
+function MoveAnimationOverlay({
+  move,
+  viewerSide,
+  definitions,
+}: {
+  move: MoveHistory;
+  viewerSide: PlayerSide;
+  definitions: Map<PieceType, PieceDefinition>;
+}) {
+  const from = toDisplayPosition(move.fromRow, move.fromColumn, viewerSide);
+  const to = toDisplayPosition(move.toRow, move.toColumn, viewerSide);
+  const fromX = ((from.column + 0.5) / BOARD_COLUMNS) * 100;
+  const fromY = ((from.row + 0.5) / BOARD_ROWS) * 100;
+  const toX = ((to.column + 0.5) / BOARD_COLUMNS) * 100;
+  const toY = ((to.row + 0.5) / BOARD_ROWS) * 100;
+  const visible = move.actingSide === viewerSide && Boolean(move.pieceType);
+  const animatedPiece: BoardSquare['piece'] = {
+    id: move.pieceId,
+    side: move.actingSide,
+    visible,
+    type: visible ? move.pieceType : null,
+    label: null,
+    abbreviation: null,
+    rank: null,
+  };
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-md"
+      aria-hidden="true"
+    >
+      <svg
+        className="got-move-trail absolute inset-0 size-full"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+      >
+        <line x1={fromX} y1={fromY} x2={toX} y2={toY} />
+      </svg>
+      <span
+        className="got-move-square got-move-square-from absolute"
+        style={
+          {
+            '--square-x': `${fromX}%`,
+            '--square-y': `${fromY}%`,
+          } as CSSProperties
+        }
+      />
+      <span
+        className="got-move-square got-move-square-to absolute"
+        style={
+          {
+            '--square-x': `${toX}%`,
+            '--square-y': `${toY}%`,
+          } as CSSProperties
+        }
+      />
+      <span
+        className={cn(
+          'got-move-ghost absolute flex items-center justify-center rounded-sm border-2 text-[clamp(0.6rem,1.35vw,1.05rem)] font-black shadow-2xl',
+          pieceTone(move.actingSide),
+          !visible && 'rounded-full border-[#111315] bg-[#202326] text-[#f7ecd8]',
+        )}
+        style={
+          {
+            '--from-x': `${fromX}%`,
+            '--from-y': `${fromY}%`,
+            '--to-x': `${toX}%`,
+            '--to-y': `${toY}%`,
+          } as CSSProperties
+        }
+      >
+        <PieceFace piece={animatedPiece} definitions={definitions} size="board" />
+      </span>
+    </div>
   );
 }
 
@@ -1113,6 +1331,17 @@ function toActualPosition(
     row: displayRow,
     column: displayColumn,
   };
+}
+
+function toDisplayPosition(row: number, column: number, viewerSide: PlayerSide | undefined) {
+  if (viewerSide === 'RED') {
+    return {
+      row: BOARD_ROWS - 1 - row,
+      column: BOARD_COLUMNS - 1 - column,
+    };
+  }
+
+  return { row, column };
 }
 
 function isSetupRow(row: number, side: PlayerSide) {
@@ -1199,7 +1428,7 @@ function captureOutcomeForViewer(move: MoveHistory, viewerSide: PlayerSide) {
     case 'DEFENDER_WINS':
       return viewerActed ? 'LOST' : 'WON';
     case 'BOTH_ELIMINATED':
-      return 'LOST';
+      return 'DRAW';
     default:
       return null;
   }

@@ -43,7 +43,8 @@ public class SetupTimerService {
 
     Instant now = Instant.now();
     match.setSetupStartedAt(now);
-    match.setSetupEndsAt(now.plusSeconds(match.getPreparationSeconds()));
+    match.setSetupEndsAt(
+        match.getPreparationSeconds() == 0 ? null : now.plusSeconds(match.getPreparationSeconds()));
   }
 
   public boolean applyExpiredSetup(GameMatch match) {
