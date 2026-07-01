@@ -40,6 +40,17 @@ class SetupTimerServiceTest {
   }
 
   @Test
+  void noTimeSetupDoesNotSetEndTime() {
+    GameMatch match = setupMatch();
+    match.setPreparationSeconds(0);
+
+    service.startSetupTimer(match);
+
+    assertThat(match.getSetupStartedAt()).isNotNull();
+    assertThat(match.getSetupEndsAt()).isNull();
+  }
+
+  @Test
   void expiredSetupAutoFillsMissingPiecesAndStartsMatch() {
     GameMatch match = setupMatch();
     match.setSetupStartedAt(Instant.now().minusSeconds(70));

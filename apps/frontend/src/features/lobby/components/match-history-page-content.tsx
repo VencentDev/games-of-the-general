@@ -95,6 +95,10 @@ function formatDate(value: string | null) {
 }
 
 function formatPreparation(seconds: number) {
+  if (seconds === 0) {
+    return 'No time';
+  }
+
   if (seconds === 30) {
     return '30 sec';
   }

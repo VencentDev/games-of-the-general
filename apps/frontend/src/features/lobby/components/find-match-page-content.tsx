@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select';
 import { useJoinMatch, usePublicMatches } from '@/features/lobby/api/lobby.hooks';
 
-type TimeFilter = 'ALL' | '30' | '60' | '90';
+type TimeFilter = 'ALL' | '0' | '30' | '60' | '90';
 
 export function FindMatchPageContent() {
   const router = useRouter();
@@ -66,6 +66,7 @@ export function FindMatchPageContent() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All preparation times</SelectItem>
+                <SelectItem value="0">No time</SelectItem>
                 <SelectItem value="30">30 seconds</SelectItem>
                 <SelectItem value="60">1 minute</SelectItem>
                 <SelectItem value="90">1 minute 30 seconds</SelectItem>
@@ -136,6 +137,10 @@ function EmptyRow({ text }: { text: string }) {
 }
 
 function formatPreparation(seconds: number) {
+  if (seconds === 0) {
+    return 'No time';
+  }
+
   if (seconds === 30) {
     return '30 sec';
   }

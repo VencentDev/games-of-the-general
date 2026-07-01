@@ -32,6 +32,7 @@ import {
 } from '@/features/lobby/api/lobby.hooks';
 
 const PREP_TIME_OPTIONS = [
+  { label: 'No time', value: '0' },
   { label: '30 seconds', value: '30' },
   { label: '1 minute', value: '60' },
   { label: '1 minute 30 seconds', value: '90' },
