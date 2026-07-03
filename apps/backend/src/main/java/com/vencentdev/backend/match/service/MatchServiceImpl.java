@@ -163,12 +163,17 @@ public class MatchServiceImpl implements MatchService {
             .findByMatchIdAndUserId(match.getId(), userId)
             .orElseThrow(() -> new ForbiddenException("You are not seated in this match"));
 
-    seatRepository.delete(seat);
-    seatRepository.flush();
+    List<MatchSeat> seatsBeforeLeave = seatRepository.findByMatchIdOrderBySideAsc(match.getId());
 
-    if (match.getHostUserId().equals(userId)) {
+    if (shouldFinishByResignation(match, seatsBeforeLeave)) {
+      finishByResignation(match, seat, seatsBeforeLeave);
+    } else if (match.getHostUserId().equals(userId)) {
+      seatRepository.delete(seat);
+      seatRepository.flush();
       match.setStatus(MatchStatus.CANCELLED);
     } else if (match.getStatus() == MatchStatus.SETUP) {
+      seatRepository.delete(seat);
+      seatRepository.flush();
       match.setStatus(MatchStatus.WAITING);
       match.setSetupStartedAt(null);
       match.setSetupEndsAt(null);
@@ -176,9 +181,12 @@ public class MatchServiceImpl implements MatchService {
       seatRepository
           .findByMatchIdOrderBySideAsc(match.getId())
           .forEach(matchSeat -> matchSeat.setReady(false));
+    } else {
+      seatRepository.delete(seat);
+      seatRepository.flush();
     }
 
-    MatchResponse response = toResponse(match);
+    MatchResponse response = toResponse(match, userId);
     realtimeService.publishMatchEvent("PLAYER_LEFT", response);
     return response;
   }

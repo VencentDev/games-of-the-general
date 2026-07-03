@@ -171,7 +171,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void leaveMatchRemovesSeatAndReturnsMatchToWaiting() throws Exception {
+  void leavingTwoPlayerMatchDeclaresRemainingPlayerWinner() throws Exception {
     String body =
         mockMvc
             .perform(
@@ -193,6 +193,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
             .getContentAsString();
 
     String matchId = body.replaceAll(".*\\\"id\\\":\\\"([^\\\"]+)\\\".*", "$1");
+    String hostUserId = jsonString(body, "hostUserId");
 
     mockMvc
         .perform(post("/api/v1/matches/{matchId}/join", matchId).with(currentUser("guest-leave")))
@@ -202,9 +203,13 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
     mockMvc
         .perform(delete("/api/v1/matches/{matchId}/seat", matchId).with(currentUser("guest-leave")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("WAITING"))
-        .andExpect(jsonPath("$.seats", hasSize(1)))
-        .andExpect(jsonPath("$.seats[0].side").value("RED"));
+        .andExpect(jsonPath("$.status").value("FINISHED"))
+        .andExpect(jsonPath("$.phase").value("GAME_OVER"))
+        .andExpect(jsonPath("$.winnerUserId").value(hostUserId))
+        .andExpect(jsonPath("$.winnerSide").value("RED"))
+        .andExpect(jsonPath("$.winReason").value("RESIGNATION"))
+        .andExpect(jsonPath("$.resignedSide").value("BLUE"))
+        .andExpect(jsonPath("$.seats", hasSize(2)));
   }
 
   @Test
