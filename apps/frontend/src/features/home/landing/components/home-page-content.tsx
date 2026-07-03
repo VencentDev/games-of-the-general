@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Flag, Shield, Swords, Trophy } from 'lucide-react';
 
-export function HomePageContent() {
+export function HomePageContent({ signedIn }: { signedIn: boolean }) {
   return (
     <main className="relative -mx-4 -my-6 max-w-[100vw] overflow-x-clip bg-[#f5f1e6] text-[#201b16] dark:bg-[#11130f] dark:text-[#f6f0e4]">
       <section className="mx-auto grid min-h-[calc(100svh-3.5rem)] w-full max-w-7xl items-center gap-10 px-4 py-8 md:grid-cols-[0.95fr_1.05fr] md:px-8 md:py-10">
@@ -20,20 +20,32 @@ export function HomePageContent() {
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2c3520] px-5 py-3 text-sm font-bold text-[#fff8ea] shadow-lg shadow-[#2c3520]/20 transition hover:bg-[#202817] active:scale-[0.98] dark:bg-[#d7bd73] dark:text-[#15130d] dark:hover:bg-[#e7ce88]"
-            >
-              <Flag className="size-4" />
-              Create account
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#8a7b62]/35 bg-white/55 px-5 py-3 text-sm font-semibold transition hover:border-[#2c3520]/50 hover:bg-white/80 active:scale-[0.98] dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10"
-            >
-              <Swords className="size-4" />
-              Sign in
-            </Link>
+            {signedIn ? (
+              <Link
+                href="/lobby"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2c3520] px-5 py-3 text-sm font-bold text-[#fff8ea] shadow-lg shadow-[#2c3520]/20 transition hover:bg-[#202817] active:scale-[0.98] dark:bg-[#d7bd73] dark:text-[#15130d] dark:hover:bg-[#e7ce88]"
+              >
+                <Flag className="size-4" />
+                Go to lobby
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2c3520] px-5 py-3 text-sm font-bold text-[#fff8ea] shadow-lg shadow-[#2c3520]/20 transition hover:bg-[#202817] active:scale-[0.98] dark:bg-[#d7bd73] dark:text-[#15130d] dark:hover:bg-[#e7ce88]"
+                >
+                  <Flag className="size-4" />
+                  Create account
+                </Link>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#8a7b62]/35 bg-white/55 px-5 py-3 text-sm font-semibold transition hover:border-[#2c3520]/50 hover:bg-white/80 active:scale-[0.98] dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10"
+                >
+                  <Swords className="size-4" />
+                  Sign in
+                </Link>
+              </>
+            )}
           </div>
           <dl className="grid max-w-xl grid-cols-3 gap-3">
             {[

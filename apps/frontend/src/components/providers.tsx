@@ -1,17 +1,26 @@
 'use client';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { SessionProvider } from 'next-auth/react';
+import { SessionProvider, signOut } from 'next-auth/react';
 import { useState } from 'react';
 import { Toaster as SonnerToaster } from 'sonner';
 
 import type { ReactNode } from 'react';
+import { ApiError } from '@/lib/api';
+
+let authFailureRedirecting = false;
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
     () =>
       new QueryClient({
+        mutationCache: new MutationCache({
+          onError: redirectOnAuthFailure,
+        }),
+        queryCache: new QueryCache({
+          onError: redirectOnAuthFailure,
+        }),
         defaultOptions: {
           queries: {
             refetchOnWindowFocus: false,
@@ -22,7 +31,7 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <SessionProvider>
+    <SessionProvider refetchInterval={5 * 60} refetchOnWindowFocus>
       <QueryClientProvider client={client}>
         {children}
         <SonnerToaster richColors position="top-right" />
@@ -30,4 +39,26 @@ export function Providers({ children }: { children: ReactNode }) {
       </QueryClientProvider>
     </SessionProvider>
   );
+}
+
+function redirectOnAuthFailure(error: Error) {
+  if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+    return;
+  }
+
+  if (authFailureRedirecting) {
+    return;
+  }
+
+  authFailureRedirecting = true;
+  void signOut({ redirectTo: signupRedirectUrl() });
+}
+
+function signupRedirectUrl() {
+  if (typeof window === 'undefined') {
+    return '/signup?callbackUrl=/lobby';
+  }
+
+  const callbackUrl = `${window.location.pathname}${window.location.search}`;
+  return `/signup?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 }
