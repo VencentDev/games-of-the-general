@@ -3,14 +3,26 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Lock, Users } from 'lucide-react';
+import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { useJoinMatch, useMatchByInviteCode } from '@/features/lobby/api/lobby.hooks';
+import {
+  useActiveMatch,
+  useJoinMatch,
+  useMatchByInviteCode,
+} from '@/features/lobby/api/lobby.hooks';
 
 export function InviteMatchPageContent({ inviteCode }: { inviteCode: string }) {
+  const activeMatch = useActiveMatch();
   const match = useMatchByInviteCode(inviteCode);
   const joinMatch = useJoinMatch();
   const router = useRouter();
+
+  useEffect(() => {
+    if (activeMatch.data?.id) {
+      router.replace(`/matches/${activeMatch.data.id}`);
+    }
+  }, [activeMatch.data?.id, router]);
 
   return (
     <main className="-mx-4 -my-6 flex min-h-[calc(100svh-3.5rem)] items-center bg-[#f5f1e6] px-4 py-8 text-[#201b16] dark:bg-[#10130f] dark:text-[#f6f0e4]">

@@ -4,6 +4,7 @@ import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchResponse;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface MatchService {
@@ -15,6 +16,8 @@ public interface MatchService {
   MatchResponse get(AuthenticatedUser principal, UUID matchId);
 
   MatchResponse getByInviteCode(AuthenticatedUser principal, String inviteCode);
+
+  Optional<MatchResponse> active(AuthenticatedUser principal);
 
   MatchResponse join(AuthenticatedUser principal, UUID matchId);
 

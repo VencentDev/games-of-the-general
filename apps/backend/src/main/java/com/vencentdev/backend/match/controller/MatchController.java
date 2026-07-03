@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,6 +44,14 @@ public class MatchController {
   @GetMapping("/history")
   public List<MatchResponse> history(@CurrentUser AuthenticatedUser user) {
     return service.history(user);
+  }
+
+  @GetMapping("/active")
+  public ResponseEntity<MatchResponse> active(@CurrentUser AuthenticatedUser user) {
+    return service
+        .active(user)
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.noContent().build());
   }
 
   @GetMapping("/{matchId}")

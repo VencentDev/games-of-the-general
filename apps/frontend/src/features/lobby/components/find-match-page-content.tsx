@@ -3,7 +3,7 @@
 import { ArrowLeft, RefreshCw, Search, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,15 +14,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useJoinMatch, usePublicMatches } from '@/features/lobby/api/lobby.hooks';
+import { useActiveMatch, useJoinMatch, usePublicMatches } from '@/features/lobby/api/lobby.hooks';
 
 type TimeFilter = 'ALL' | '0' | '30' | '60' | '90';
 
 export function FindMatchPageContent() {
   const router = useRouter();
+  const activeMatch = useActiveMatch();
   const publicMatches = usePublicMatches();
   const joinMatch = useJoinMatch();
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('ALL');
+
+  useEffect(() => {
+    if (activeMatch.data?.id) {
+      router.replace(`/matches/${activeMatch.data.id}`);
+    }
+  }, [activeMatch.data?.id, router]);
 
   const matches = useMemo(() => {
     const rows = publicMatches.data ?? [];
