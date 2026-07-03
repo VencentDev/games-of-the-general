@@ -65,4 +65,16 @@ public class MatchController {
   public MatchResponse leave(@CurrentUser AuthenticatedUser user, @PathVariable UUID matchId) {
     return service.leave(user, matchId);
   }
+
+  @PostMapping("/{matchId}/rematch")
+  public MatchResponse requestRematch(
+      @CurrentUser AuthenticatedUser user, @PathVariable UUID matchId) {
+    return service.requestRematch(user, matchId);
+  }
+
+  @PostMapping("/{matchId}/rematch/accept")
+  public MatchResponse acceptRematch(
+      @CurrentUser AuthenticatedUser user, @PathVariable UUID matchId) {
+    return service.acceptRematch(user, matchId);
+  }
 }

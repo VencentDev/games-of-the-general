@@ -20,5 +20,9 @@ public interface MatchService {
 
   MatchResponse leave(AuthenticatedUser principal, UUID matchId);
 
+  MatchResponse requestRematch(AuthenticatedUser principal, UUID matchId);
+
+  MatchResponse acceptRematch(AuthenticatedUser principal, UUID matchId);
+
   List<MatchResponse> history(AuthenticatedUser principal);
 }

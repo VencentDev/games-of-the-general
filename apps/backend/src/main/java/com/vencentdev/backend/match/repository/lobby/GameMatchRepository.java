@@ -28,4 +28,11 @@ public interface GameMatchRepository extends JpaRepository<GameMatch, UUID> {
   Optional<GameMatch> findByIdForUpdate(@Param("id") UUID id);
 
   Optional<GameMatch> findByInviteCode(String inviteCode);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select gameMatch from GameMatch gameMatch where gameMatch.inviteCode = :inviteCode")
+  Optional<GameMatch> findByInviteCodeForUpdate(@Param("inviteCode") String inviteCode);
+
+  Optional<GameMatch> findTopByRematchSourceMatchIdAndStatusOrderByCreatedAtDesc(
+      UUID rematchSourceMatchId, MatchStatus status);
 }

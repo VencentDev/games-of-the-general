@@ -4,4 +4,4 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record MatchRealtimeEvent(
-    String type, UUID matchId, MatchResponse match, Instant occurredAt) {}
+    String type, UUID matchId, MatchResponse match, UUID targetMatchId, Instant occurredAt) {}

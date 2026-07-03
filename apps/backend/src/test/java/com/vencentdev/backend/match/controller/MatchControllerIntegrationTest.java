@@ -10,10 +10,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.vencentdev.backend.IntegrationTestBase;
+import com.vencentdev.backend.match.entity.GameMatch;
+import com.vencentdev.backend.match.enums.lobby.MatchStatus;
+import com.vencentdev.backend.match.enums.state.GamePhase;
 import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
 import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
 import com.vencentdev.backend.match.repository.lobby.PlayerLobbySettingsRepository;
+import com.vencentdev.backend.match.repository.state.MatchPieceRepository;
 import com.vencentdev.backend.user.repository.UserRepository;
+import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +31,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   @Autowired private MockMvc mockMvc;
   @Autowired private MatchSeatRepository seatRepository;
   @Autowired private GameMatchRepository matchRepository;
+  @Autowired private MatchPieceRepository pieceRepository;
   @Autowired private PlayerLobbySettingsRepository settingsRepository;
   @Autowired private UserRepository userRepository;
 
@@ -32,6 +39,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   void setUp() {
     seatRepository.deleteAll();
     matchRepository.deleteAll();
+    pieceRepository.deleteAll();
     settingsRepository.deleteAll();
     userRepository.deleteAll();
   }
@@ -163,7 +171,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void leaveMatchRemovesSeatAndReturnsMatchToWaiting() throws Exception {
+  void leavingTwoPlayerMatchDeclaresRemainingPlayerWinner() throws Exception {
     String body =
         mockMvc
             .perform(
@@ -185,6 +193,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
             .getContentAsString();
 
     String matchId = body.replaceAll(".*\\\"id\\\":\\\"([^\\\"]+)\\\".*", "$1");
+    String hostUserId = jsonString(body, "hostUserId");
 
     mockMvc
         .perform(post("/api/v1/matches/{matchId}/join", matchId).with(currentUser("guest-leave")))
@@ -194,9 +203,95 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
     mockMvc
         .perform(delete("/api/v1/matches/{matchId}/seat", matchId).with(currentUser("guest-leave")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("WAITING"))
-        .andExpect(jsonPath("$.seats", hasSize(1)))
-        .andExpect(jsonPath("$.seats[0].side").value("RED"));
+        .andExpect(jsonPath("$.status").value("FINISHED"))
+        .andExpect(jsonPath("$.phase").value("GAME_OVER"))
+        .andExpect(jsonPath("$.winnerUserId").value(hostUserId))
+        .andExpect(jsonPath("$.winnerSide").value("RED"))
+        .andExpect(jsonPath("$.winReason").value("RESIGNATION"))
+        .andExpect(jsonPath("$.resignedSide").value("BLUE"))
+        .andExpect(jsonPath("$.seats", hasSize(2)));
+  }
+
+  @Test
+  void finishedMatchCanRequestAndAcceptRematch() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("host-rematch"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Original table",
+                          "visibility": "PRIVATE",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 30
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String matchId = jsonString(body, "id");
+    String hostUserId = jsonString(body, "hostUserId");
+
+    mockMvc
+        .perform(post("/api/v1/matches/{matchId}/join", matchId).with(currentUser("guest-rematch")))
+        .andExpect(status().isOk());
+
+    GameMatch match = matchRepository.findById(UUID.fromString(matchId)).orElseThrow();
+    match.setStatus(MatchStatus.FINISHED);
+    match.setPhase(GamePhase.GAME_OVER);
+    match.setFinishedAt(Instant.now());
+    matchRepository.saveAndFlush(match);
+
+    String rematchBody =
+        mockMvc
+            .perform(
+                post("/api/v1/matches/{matchId}/rematch", matchId)
+                    .with(currentUser("host-rematch")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("Original table rematch"))
+            .andExpect(jsonPath("$.visibility").value("PRIVATE"))
+            .andExpect(jsonPath("$.status").value("WAITING"))
+            .andExpect(jsonPath("$.rematchSourceMatchId").value(matchId))
+            .andExpect(jsonPath("$.rematchRequestedByUserId").value(hostUserId))
+            .andExpect(jsonPath("$.seats", hasSize(1)))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String rematchId = jsonString(rematchBody, "id");
+
+    mockMvc
+        .perform(get("/api/v1/matches/{matchId}", matchId).with(currentUser("guest-rematch")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.pendingRematchMatchId").value(rematchId))
+        .andExpect(jsonPath("$.rematchRequestedByUserId").value(hostUserId))
+        .andExpect(jsonPath("$.viewerCanAcceptRematch").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches/{matchId}/rematch/accept", matchId)
+                .with(currentUser("guest-rematch")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(rematchId))
+        .andExpect(jsonPath("$.status").value("SETUP"))
+        .andExpect(jsonPath("$.seats", hasSize(2)));
+
+    mockMvc
+        .perform(
+            get("/api/v1/matches/{matchId}/state", rematchId).with(currentUser("host-rematch")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.ownPieces", hasSize(21)));
+
+    mockMvc
+        .perform(
+            get("/api/v1/matches/{matchId}/state", rematchId).with(currentUser("guest-rematch")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.ownPieces", hasSize(21)));
   }
 
   @Test
@@ -251,5 +346,9 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
                     .claim("email", subject + "@example.com")
                     .claim("name", subject))
         .authorities(() -> "ROLE_USER");
+  }
+
+  private String jsonString(String json, String fieldName) {
+    return json.replaceAll(".*\\\"" + fieldName + "\\\":\\\"([^\\\"]+)\\\".*", "$1");
   }
 }

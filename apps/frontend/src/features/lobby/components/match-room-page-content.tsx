@@ -63,12 +63,14 @@ import {
   useCreateMatch,
   useGameModel,
   useGameState,
+  useAcceptRematch,
   useLeaveMatch,
   useLegalMoves,
   useMarkReady,
   useMatch,
   useMoveHistory,
   useMovePiece,
+  useRequestRematch,
   useUpdateSetup,
 } from '@/features/lobby/api/lobby.hooks';
 import { ApiError } from '@/lib/api';
@@ -110,6 +112,8 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const markReady = useMarkReady(matchId);
   const movePiece = useMovePiece(matchId);
   const createMatch = useCreateMatch();
+  const requestRematch = useRequestRematch(matchId);
+  const acceptRematch = useAcceptRematch(matchId);
   const socket = useMatchSocket(matchId);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -119,17 +123,17 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const [resultOverlay, setResultOverlay] = useState<{
     image: StaticImageData;
     alt: string;
-    durationMs: number;
+    durationMs: number | null;
   } | null>(null);
   const [movementOverlay, setMovementOverlay] = useState<{
     key: string;
     move: MoveHistory;
   } | null>(null);
-  const [gameOverDialogOpen, setGameOverDialogOpen] = useState(false);
   const [draggingSetupPieceId, setDraggingSetupPieceId] = useState<string | null>(null);
   const moveInFlightRef = useRef(false);
   const lastSeenMoveNumberRef = useRef(0);
   const gameOverShownRef = useRef(false);
+  const redirectedRematchRef = useRef<string | null>(null);
 
   const state = gameState.data;
   const viewerSide = state?.viewerSide;
@@ -310,18 +314,27 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     setResultOverlay({
       image: viewerWon ? gameOverWinImage : gameOverLostImage,
       alt: viewerWon ? 'Game over, you win' : 'Game over, you lost',
-      durationMs: 5_000,
+      durationMs: null,
     });
-
-    const timeout = window.setTimeout(() => {
-      setGameOverDialogOpen(true);
-    }, 5_000);
-
-    return () => window.clearTimeout(timeout);
   }, [state]);
 
   useEffect(() => {
-    if (!resultOverlay) {
+    const acceptedEvent = socket.events.find(
+      (event) =>
+        'targetMatchId' in event && event.type === 'REMATCH_ACCEPTED' && event.targetMatchId,
+    );
+    const targetMatchId =
+      acceptedEvent && 'targetMatchId' in acceptedEvent ? acceptedEvent.targetMatchId : null;
+    if (!targetMatchId || redirectedRematchRef.current === targetMatchId) {
+      return;
+    }
+
+    redirectedRematchRef.current = targetMatchId;
+    router.push(`/matches/${targetMatchId}`);
+  }, [router, socket.events]);
+
+  useEffect(() => {
+    if (!resultOverlay || resultOverlay.durationMs === null) {
       return;
     }
 
@@ -609,7 +622,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     });
   }
 
-  function rematch() {
+  function newMatch() {
     if (!match.data) {
       router.push('/lobby');
       return;
@@ -629,10 +642,30 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     );
   }
 
+  function rematch() {
+    requestRematch.mutate(undefined, {
+      onError: showMutationError,
+    });
+  }
+
+  function acceptRequestedRematch() {
+    acceptRematch.mutate(undefined, {
+      onSuccess: (createdMatch) => router.push(`/matches/${createdMatch.id}`),
+      onError: showMutationError,
+    });
+  }
+
   const busy = updateSetup.isPending || markReady.isPending || movePiece.isPending;
   const lastMoves = (moveHistory.data ?? []).slice(-8).reverse();
   const bottomSeat = viewerSide ? seats.find((seat) => seat.side === viewerSide) : seats[1];
   const topSeat = viewerSide ? seats.find((seat) => seat.side !== viewerSide) : seats[0];
+  const isGameOver = state?.phase === 'GAME_OVER';
+  const pendingRematchMatchId = match.data?.pendingRematchMatchId ?? null;
+  const isRematchRequester = Boolean(
+    bottomSeat &&
+    match.data?.rematchRequestedByUserId &&
+    match.data.rematchRequestedByUserId === bottomSeat.userId,
+  );
 
   return (
     <main className="-mx-4 -my-6 min-h-[calc(100svh-3.5rem)] bg-[#111315] p-3 text-[#ece8df] md:p-4">
@@ -752,25 +785,6 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                         className="h-auto max-h-[42%] w-[72%] max-w-[44rem] object-contain drop-shadow-2xl"
                         priority
                       />
-                    </div>
-                  ) : null}
-                  {state?.phase === 'GAME_OVER' && !resultOverlay ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-6">
-                      <div className="rounded-md border border-white/15 bg-[#111315]/95 px-6 py-4 text-center shadow-2xl">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">
-                          Game Over
-                        </p>
-                        <p className="mt-2 text-2xl font-black">
-                          {state.winnerSide
-                            ? `${state.winnerSide} wins`
-                            : state.drawReason
-                              ? 'Draw'
-                              : 'Match ended'}
-                        </p>
-                        <p className="mt-1 text-sm text-white/65">
-                          {state.winReason ?? state.drawReason ?? 'Final position reached'}
-                        </p>
-                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -900,19 +914,33 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       message={chatStatusText(state, socket.connected)}
                     />
                   </div>
-                  <div className="flex gap-2 border-t border-white/10 p-3">
-                    <div className="relative flex-1">
-                      <Input
-                        disabled
-                        placeholder="Type a message..."
-                        className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
-                      />
-                      <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+                  {isGameOver ? (
+                    <GameOverActions
+                      pendingRematchMatchId={pendingRematchMatchId}
+                      canAcceptRematch={Boolean(match.data?.viewerCanAcceptRematch)}
+                      isRematchRequester={isRematchRequester}
+                      createPending={createMatch.isPending}
+                      requestPending={requestRematch.isPending}
+                      acceptPending={acceptRematch.isPending}
+                      onNewMatch={newMatch}
+                      onRematch={rematch}
+                      onAcceptRematch={acceptRequestedRematch}
+                    />
+                  ) : (
+                    <div className="flex gap-2 border-t border-white/10 p-3">
+                      <div className="relative flex-1">
+                        <Input
+                          disabled
+                          placeholder="Type a message..."
+                          className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
+                        />
+                        <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+                      </div>
+                      <Button disabled variant="ghost" className="shrink-0 text-white/45">
+                        <Send className="size-5" />
+                      </Button>
                     </div>
-                    <Button disabled variant="ghost" className="shrink-0 text-white/45">
-                      <Send className="size-5" />
-                    </Button>
-                  </div>
+                  )}
                 </section>
               </>
             )}
@@ -1023,39 +1051,72 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={gameOverDialogOpen} onOpenChange={setGameOverDialogOpen}>
-        <DialogContent className="border-white/15 bg-[#181b15] text-[#f6f0e4] sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black tracking-normal">Game over</DialogTitle>
-            <DialogDescription className="text-sm leading-6 text-white/65">
-              {state?.winnerSide
-                ? `${state.winnerSide} won by ${state.winReason ?? 'final result'}.`
-                : `Match ended${state?.drawReason ? ` by ${state.drawReason}` : ''}.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-white/15 bg-white/5 text-white hover:bg-white/10"
-              onClick={() => router.push('/lobby')}
-            >
-              Return to lobby
-            </Button>
-            <Button
-              type="button"
-              className="bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
-              disabled={createMatch.isPending}
-              onClick={rematch}
-            >
-              {createMatch.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-              Rematch
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </main>
+  );
+}
+
+function GameOverActions({
+  pendingRematchMatchId,
+  canAcceptRematch,
+  isRematchRequester,
+  createPending,
+  requestPending,
+  acceptPending,
+  onNewMatch,
+  onRematch,
+  onAcceptRematch,
+}: {
+  pendingRematchMatchId: string | null;
+  canAcceptRematch: boolean;
+  isRematchRequester: boolean;
+  createPending: boolean;
+  requestPending: boolean;
+  acceptPending: boolean;
+  onNewMatch: () => void;
+  onRematch: () => void;
+  onAcceptRematch: () => void;
+}) {
+  const busy = createPending || requestPending || acceptPending;
+
+  return (
+    <div className="space-y-2 border-t border-white/10 p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 border-white/15 bg-white/5 text-white hover:bg-white/10"
+          disabled={busy}
+          onClick={onNewMatch}
+        >
+          {createPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+          New Match
+        </Button>
+        {pendingRematchMatchId ? (
+          <Button
+            type="button"
+            className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+            disabled={busy || !canAcceptRematch}
+            onClick={onAcceptRematch}
+          >
+            {acceptPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            {canAcceptRematch ? 'Accept Match' : isRematchRequester ? 'Waiting' : 'Requested'}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+            disabled={busy}
+            onClick={onRematch}
+          >
+            {requestPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            Rematch
+          </Button>
+        )}
+      </div>
+      {isRematchRequester && pendingRematchMatchId ? (
+        <p className="text-xs text-white/50">Waiting for the other player to accept.</p>
+      ) : null}
+    </div>
   );
 }
 

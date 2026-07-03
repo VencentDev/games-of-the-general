@@ -3,7 +3,6 @@ package com.vencentdev.backend.match.service;
 import com.vencentdev.backend.match.entity.GameMatch;
 import com.vencentdev.backend.match.entity.MatchPiece;
 import com.vencentdev.backend.match.enums.lobby.MatchStatus;
-import com.vencentdev.backend.match.enums.rules.PieceType;
 import com.vencentdev.backend.match.enums.state.GamePhase;
 import com.vencentdev.backend.match.enums.state.PieceStatus;
 import com.vencentdev.backend.match.enums.state.PlayerSide;
@@ -24,14 +23,17 @@ public class SetupTimerService {
   private final MatchPieceRepository pieceRepository;
   private final MatchSeatRepository seatRepository;
   private final MatchRealtimeService realtimeService;
+  private final MatchPieceSetService pieceSetService;
 
   public SetupTimerService(
       MatchPieceRepository pieceRepository,
       MatchSeatRepository seatRepository,
-      MatchRealtimeService realtimeService) {
+      MatchRealtimeService realtimeService,
+      MatchPieceSetService pieceSetService) {
     this.pieceRepository = pieceRepository;
     this.seatRepository = seatRepository;
     this.realtimeService = realtimeService;
+    this.pieceSetService = pieceSetService;
   }
 
   public void startSetupTimer(GameMatch match) {
@@ -55,7 +57,7 @@ public class SetupTimerService {
       return false;
     }
 
-    ensurePieces(match);
+    pieceSetService.ensurePieces(match);
     autoFillMissingPieces(match, PlayerSide.RED);
     autoFillMissingPieces(match, PlayerSide.BLUE);
     seatRepository.findByMatchIdOrderBySideAsc(match.getId()).forEach(seat -> seat.setReady(true));
@@ -69,26 +71,6 @@ public class SetupTimerService {
     match.setPhase(GamePhase.PLAYING);
     match.setCurrentTurn(PlayerSide.RED);
     match.setStartedAt(Instant.now());
-  }
-
-  private void ensurePieces(GameMatch match) {
-    if (!pieceRepository.findByMatchIdOrderBySideAscTypeAsc(match.getId()).isEmpty()) {
-      return;
-    }
-
-    for (PlayerSide side : PlayerSide.values()) {
-      for (PieceType type : PieceType.values()) {
-        for (int index = 0; index < type.count(); index++) {
-          pieceRepository.save(
-              MatchPiece.builder()
-                  .match(match)
-                  .side(side)
-                  .type(type)
-                  .status(PieceStatus.UNPLACED)
-                  .build());
-        }
-      }
-    }
   }
 
   private void autoFillMissingPieces(GameMatch match, PlayerSide side) {
