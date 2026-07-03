@@ -22,6 +22,8 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,8 @@ public class MatchServiceImpl implements MatchService {
 
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final char[] INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
+  private static final Set<MatchStatus> ACTIVE_MATCH_STATUSES =
+      Set.of(MatchStatus.WAITING, MatchStatus.SETUP, MatchStatus.PLAYING);
 
   private final GameMatchRepository matchRepository;
   private final MatchSeatRepository seatRepository;
@@ -55,6 +59,11 @@ public class MatchServiceImpl implements MatchService {
   @Transactional
   public MatchResponse create(AuthenticatedUser principal, MatchCreateRequest request) {
     UUID userId = userService.resolveInternalId(principal);
+    Optional<GameMatch> activeMatch = findActiveMatchForUpdate(userId);
+    if (activeMatch.isPresent()) {
+      return toResponse(activeMatch.get(), userId);
+    }
+
     GameMatch match =
         matchRepository.save(
             GameMatch.builder()
@@ -120,6 +129,13 @@ public class MatchServiceImpl implements MatchService {
 
   @Override
   @Transactional
+  public Optional<MatchResponse> active(AuthenticatedUser principal) {
+    UUID userId = userService.resolveInternalId(principal);
+    return findActiveMatchForUpdate(userId).map(match -> toResponse(match, userId));
+  }
+
+  @Override
+  @Transactional
   public MatchResponse join(AuthenticatedUser principal, UUID matchId) {
     UUID userId = userService.resolveInternalId(principal);
     GameMatch match = findMatchForUpdate(matchId);
@@ -127,6 +143,11 @@ public class MatchServiceImpl implements MatchService {
     if (seatRepository.existsByMatchIdAndUserId(match.getId(), userId)) {
       setupTimerService.applyExpiredSetup(match);
       return toResponse(match, userId);
+    }
+
+    Optional<GameMatch> activeMatch = findActiveMatchForUpdate(userId);
+    if (activeMatch.isPresent()) {
+      return toResponse(activeMatch.get(), userId);
     }
 
     if (match.getStatus() != MatchStatus.WAITING) {
@@ -330,6 +351,14 @@ public class MatchServiceImpl implements MatchService {
     return matchRepository
         .findByIdForUpdate(matchId)
         .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
+  }
+
+  private Optional<GameMatch> findActiveMatchForUpdate(UUID userId) {
+    return seatRepository.findActiveByUserIdForUpdate(userId, ACTIVE_MATCH_STATUSES).stream()
+        .map(MatchSeat::getMatch)
+        .peek(setupTimerService::applyExpiredSetup)
+        .filter(match -> ACTIVE_MATCH_STATUSES.contains(match.getStatus()))
+        .findFirst();
   }
 
   private void requireVisibleToUser(GameMatch match, UUID userId) {

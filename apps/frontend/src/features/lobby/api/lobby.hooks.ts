@@ -190,6 +190,7 @@ export type CreateMatchInput = {
 };
 
 export const lobbyKeys = {
+  activeMatch: ['lobby', 'active-match'] as const,
   publicMatches: ['lobby', 'public-matches'] as const,
   history: ['lobby', 'history'] as const,
   gameModel: ['lobby', 'game-model'] as const,
@@ -207,6 +208,18 @@ export function usePublicMatches() {
   return useQuery({
     queryKey: lobbyKeys.publicMatches,
     queryFn: () => clientApi<MatchSummary[]>(session?.accessToken, '/api/v1/matches/public'),
+    enabled: !!session?.accessToken,
+  });
+}
+
+export function useActiveMatch() {
+  const { data: session } = useSession();
+
+  return useQuery({
+    queryKey: lobbyKeys.activeMatch,
+    queryFn: async () =>
+      (await clientApi<MatchSummary | undefined>(session?.accessToken, '/api/v1/matches/active')) ??
+      null,
     enabled: !!session?.accessToken,
   });
 }
@@ -288,6 +301,7 @@ export function useCreateMatch() {
         body: JSON.stringify(input),
       }),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
     },
@@ -304,6 +318,7 @@ export function useJoinMatch() {
         method: 'POST',
       }),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
     },
@@ -320,6 +335,7 @@ export function useRequestRematch(matchId: string) {
         method: 'POST',
       }),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
     },
@@ -336,6 +352,7 @@ export function useAcceptRematch(matchId: string) {
         method: 'POST',
       }),
     onSuccess: (rematch) => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(rematch.id) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
@@ -353,6 +370,7 @@ export function useLeaveMatch() {
         method: 'DELETE',
       }),
     onSuccess: (_match, matchId) => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });

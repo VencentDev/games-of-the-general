@@ -171,6 +171,145 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
+  void activeMatchReturnsCurrentWaitingMatchForRedirect() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("active-waiting"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Current table",
+                          "visibility": "PUBLIC",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 60
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String matchId = jsonString(body, "id");
+
+    mockMvc
+        .perform(get("/api/v1/matches/active").with(currentUser("active-waiting")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(matchId))
+        .andExpect(jsonPath("$.status").value("WAITING"));
+  }
+
+  @Test
+  void createMatchReturnsExistingActiveMatchWithoutCreatingAnotherMatch() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("host-active-create"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "First table",
+                          "visibility": "PUBLIC",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 60
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String existingMatchId = jsonString(body, "id");
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches")
+                .with(currentUser("host-active-create"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "name": "Second table",
+                      "visibility": "PRIVATE",
+                      "mode": "Classic hidden ranks",
+                      "preparationSeconds": 30
+                    }
+                    """))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.id").value(existingMatchId))
+        .andExpect(jsonPath("$.name").value("First table"));
+
+    mockMvc
+        .perform(get("/api/v1/matches/public").with(currentUser("host-active-create")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$", hasSize(1)));
+  }
+
+  @Test
+  void joinMatchReturnsExistingActiveMatchWithoutJoiningAnotherMatch() throws Exception {
+    String firstBody =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("active-join-player"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Active table",
+                          "visibility": "PUBLIC",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 60
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String activeMatchId = jsonString(firstBody, "id");
+
+    String secondBody =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("other-host"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Other table",
+                          "visibility": "PUBLIC",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 60
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String otherMatchId = jsonString(secondBody, "id");
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches/{matchId}/join", otherMatchId)
+                .with(currentUser("active-join-player")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(activeMatchId))
+        .andExpect(jsonPath("$.name").value("Active table"));
+
+    mockMvc
+        .perform(get("/api/v1/matches/{matchId}", otherMatchId).with(currentUser("other-host")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.seats", hasSize(1)));
+  }
+
+  @Test
   void leavingTwoPlayerMatchDeclaresRemainingPlayerWinner() throws Exception {
     String body =
         mockMvc
