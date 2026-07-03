@@ -26,6 +26,10 @@ export type MatchSummary = {
   preparationSeconds: number;
   inviteCode: string;
   inviteUrl: string;
+  rematchSourceMatchId: string | null;
+  rematchRequestedByUserId: string | null;
+  pendingRematchMatchId: string | null;
+  viewerCanAcceptRematch: boolean;
   hostUserId: string;
   winnerUserId: string | null;
   winnerSide: PlayerSide | null;
@@ -301,6 +305,39 @@ export function useJoinMatch() {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
+    },
+  });
+}
+
+export function useRequestRematch(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      clientApi<MatchSummary>(session?.accessToken, `/api/v1/matches/${matchId}/rematch`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
+    },
+  });
+}
+
+export function useAcceptRematch(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      clientApi<MatchSummary>(session?.accessToken, `/api/v1/matches/${matchId}/rematch/accept`, {
+        method: 'POST',
+      }),
+    onSuccess: (rematch) => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(rematch.id) });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
     },
   });

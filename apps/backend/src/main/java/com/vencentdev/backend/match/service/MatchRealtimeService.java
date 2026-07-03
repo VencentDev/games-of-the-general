@@ -18,8 +18,13 @@ public class MatchRealtimeService {
   }
 
   public void publishMatchEvent(String type, MatchResponse match) {
+    publishMatchEvent(type, match, null);
+  }
+
+  public void publishMatchEvent(String type, MatchResponse match, UUID targetMatchId) {
     messagingTemplate.convertAndSend(
-        matchTopic(match.id()), new MatchRealtimeEvent(type, match.id(), match, Instant.now()));
+        matchTopic(match.id()),
+        new MatchRealtimeEvent(type, match.id(), match, targetMatchId, Instant.now()));
   }
 
   public void publishPresence(UUID matchId, String subject) {

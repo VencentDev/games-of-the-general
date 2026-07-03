@@ -13,6 +13,7 @@ import com.vencentdev.backend.match.enums.lobby.MatchStatus;
 import com.vencentdev.backend.match.enums.lobby.MatchVisibility;
 import com.vencentdev.backend.match.enums.state.GamePhase;
 import com.vencentdev.backend.match.enums.state.PlayerSide;
+import com.vencentdev.backend.match.enums.state.WinReason;
 import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
 import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
 import com.vencentdev.backend.user.service.UserService;
@@ -77,7 +78,7 @@ public class MatchServiceImpl implements MatchService {
             .joinedAt(Instant.now())
             .build());
 
-    MatchResponse response = toResponse(match);
+    MatchResponse response = toResponse(match, userId);
     realtimeService.publishMatchEvent("MATCH_CREATED", response);
     return response;
   }
@@ -89,7 +90,7 @@ public class MatchServiceImpl implements MatchService {
         .findTop20ByVisibilityAndStatusOrderByCreatedAtDesc(
             MatchVisibility.PUBLIC, MatchStatus.WAITING)
         .stream()
-        .map(this::toResponse)
+        .map(match -> toResponse(match, null))
         .toList();
   }
 
@@ -97,10 +98,10 @@ public class MatchServiceImpl implements MatchService {
   @Transactional
   public MatchResponse get(AuthenticatedUser principal, UUID matchId) {
     UUID userId = userService.resolveInternalId(principal);
-    GameMatch match = findMatch(matchId);
+    GameMatch match = findMatchForUpdate(matchId);
     setupTimerService.applyExpiredSetup(match);
     requireVisibleToUser(match, userId);
-    return toResponse(match);
+    return toResponse(match, userId);
   }
 
   @Override
@@ -108,13 +109,12 @@ public class MatchServiceImpl implements MatchService {
   public MatchResponse getByInviteCode(AuthenticatedUser principal, String inviteCode) {
     userService.resolveInternalId(principal);
     return matchRepository
-        .findByInviteCode(inviteCode.toUpperCase(Locale.ROOT))
+        .findByInviteCodeForUpdate(inviteCode.toUpperCase(Locale.ROOT))
         .map(
             match -> {
               setupTimerService.applyExpiredSetup(match);
-              return match;
+              return toResponse(match, null);
             })
-        .map(this::toResponse)
         .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
   }
 
@@ -122,11 +122,11 @@ public class MatchServiceImpl implements MatchService {
   @Transactional
   public MatchResponse join(AuthenticatedUser principal, UUID matchId) {
     UUID userId = userService.resolveInternalId(principal);
-    GameMatch match = findMatch(matchId);
+    GameMatch match = findMatchForUpdate(matchId);
 
     if (seatRepository.existsByMatchIdAndUserId(match.getId(), userId)) {
       setupTimerService.applyExpiredSetup(match);
-      return toResponse(match);
+      return toResponse(match, userId);
     }
 
     if (match.getStatus() != MatchStatus.WAITING) {
@@ -148,7 +148,7 @@ public class MatchServiceImpl implements MatchService {
     match.setStatus(MatchStatus.SETUP);
     setupTimerService.startSetupTimer(match);
 
-    MatchResponse response = toResponse(match);
+    MatchResponse response = toResponse(match, userId);
     realtimeService.publishMatchEvent("PLAYER_JOINED", response);
     return response;
   }
@@ -157,7 +157,7 @@ public class MatchServiceImpl implements MatchService {
   @Transactional
   public MatchResponse leave(AuthenticatedUser principal, UUID matchId) {
     UUID userId = userService.resolveInternalId(principal);
-    GameMatch match = findMatch(matchId);
+    GameMatch match = findMatchForUpdate(matchId);
     MatchSeat seat =
         seatRepository
             .findByMatchIdAndUserId(match.getId(), userId)
@@ -183,6 +183,120 @@ public class MatchServiceImpl implements MatchService {
     return response;
   }
 
+  private boolean shouldFinishByResignation(GameMatch match, List<MatchSeat> seats) {
+    return seats.size() == 2
+        && (match.getStatus() == MatchStatus.SETUP || match.getStatus() == MatchStatus.PLAYING)
+        && match.getPhase() != GamePhase.GAME_OVER;
+  }
+
+  private void finishByResignation(GameMatch match, MatchSeat resignedSeat, List<MatchSeat> seats) {
+    MatchSeat winnerSeat =
+        seats.stream()
+            .filter(matchSeat -> !matchSeat.getId().equals(resignedSeat.getId()))
+            .findFirst()
+            .orElseThrow(() -> new ConflictException("No remaining player"));
+
+    match.setStatus(MatchStatus.FINISHED);
+    match.setPhase(GamePhase.GAME_OVER);
+    match.setWinnerUserId(winnerSeat.getUserId());
+    match.setWinnerSide(winnerSeat.getSide());
+    match.setWinReason(WinReason.RESIGNATION);
+    match.setResignedSide(resignedSeat.getSide());
+    match.setCurrentTurn(null);
+    match.setSetupEndsAt(null);
+    match.setFinishedAt(Instant.now());
+  }
+
+  @Override
+  @Transactional
+  public MatchResponse requestRematch(AuthenticatedUser principal, UUID matchId) {
+    UUID userId = userService.resolveInternalId(principal);
+    GameMatch source = findMatchForUpdate(matchId);
+    requireRematchableSource(source, userId);
+
+    var existing =
+        matchRepository.findTopByRematchSourceMatchIdAndStatusOrderByCreatedAtDesc(
+            source.getId(), MatchStatus.WAITING);
+    if (existing.isPresent()) {
+      GameMatch rematch = existing.get();
+      if (!userId.equals(rematch.getRematchRequestedByUserId())) {
+        throw new ConflictException("A rematch has already been requested");
+      }
+      return toResponse(rematch, userId);
+    }
+
+    GameMatch rematch =
+        matchRepository.save(
+            GameMatch.builder()
+                .hostUserId(userId)
+                .name(source.getName().trim() + " rematch")
+                .visibility(source.getVisibility())
+                .status(MatchStatus.WAITING)
+                .phase(GamePhase.SETUP)
+                .moveNumber(0)
+                .mode(source.getMode())
+                .preparationSeconds(source.getPreparationSeconds())
+                .inviteCode(uniqueInviteCode())
+                .rematchSourceMatchId(source.getId())
+                .rematchRequestedByUserId(userId)
+                .build());
+
+    seatRepository.save(
+        MatchSeat.builder()
+            .match(rematch)
+            .userId(userId)
+            .side(PlayerSide.RED)
+            .ready(false)
+            .joinedAt(Instant.now())
+            .build());
+
+    MatchResponse sourceResponse = toResponse(source, userId);
+    realtimeService.publishMatchEvent("REMATCH_REQUESTED", sourceResponse);
+    return toResponse(rematch, userId);
+  }
+
+  @Override
+  @Transactional
+  public MatchResponse acceptRematch(AuthenticatedUser principal, UUID matchId) {
+    UUID userId = userService.resolveInternalId(principal);
+    GameMatch source = findMatchForUpdate(matchId);
+    requireRematchableSource(source, userId);
+    GameMatch rematch =
+        matchRepository
+            .findTopByRematchSourceMatchIdAndStatusOrderByCreatedAtDesc(
+                source.getId(), MatchStatus.WAITING)
+            .orElseThrow(() -> new ConflictException("No rematch has been requested"));
+
+    if (userId.equals(rematch.getRematchRequestedByUserId())) {
+      throw new ConflictException("Waiting for the other player to accept");
+    }
+
+    if (seatRepository.existsByMatchIdAndUserId(rematch.getId(), userId)) {
+      return toResponse(rematch, userId);
+    }
+
+    if (seatRepository.existsByMatchIdAndSide(rematch.getId(), PlayerSide.BLUE)) {
+      throw new ConflictException("Rematch is already full");
+    }
+
+    seatRepository.save(
+        MatchSeat.builder()
+            .match(rematch)
+            .userId(userId)
+            .side(PlayerSide.BLUE)
+            .ready(false)
+            .joinedAt(Instant.now())
+            .build());
+    rematch.setStatus(MatchStatus.SETUP);
+    setupTimerService.startSetupTimer(rematch);
+
+    MatchResponse rematchResponse = toResponse(rematch, userId);
+    realtimeService.publishMatchEvent("PLAYER_JOINED", rematchResponse);
+    realtimeService.publishMatchEvent(
+        "REMATCH_ACCEPTED", toResponse(source, userId), rematch.getId());
+    return rematchResponse;
+  }
+
   @Override
   @Transactional(readOnly = true)
   public List<MatchResponse> history(AuthenticatedUser principal) {
@@ -200,13 +314,13 @@ public class MatchServiceImpl implements MatchService {
     }
 
     return matchRepository.findByIdInOrderByCreatedAtDesc(ids).stream()
-        .map(this::toResponse)
+        .map(match -> toResponse(match, userId))
         .toList();
   }
 
-  private GameMatch findMatch(UUID matchId) {
+  private GameMatch findMatchForUpdate(UUID matchId) {
     return matchRepository
-        .findById(matchId)
+        .findByIdForUpdate(matchId)
         .orElseThrow(() -> new ResourceNotFoundException("Match not found"));
   }
 
@@ -220,7 +334,17 @@ public class MatchServiceImpl implements MatchService {
     throw new ForbiddenException("Match is private");
   }
 
-  private MatchResponse toResponse(GameMatch match) {
+  private void requireRematchableSource(GameMatch match, UUID userId) {
+    if (!seatRepository.existsByMatchIdAndUserId(match.getId(), userId)) {
+      throw new ForbiddenException("You are not seated in this match");
+    }
+
+    if (match.getStatus() != MatchStatus.FINISHED || match.getPhase() != GamePhase.GAME_OVER) {
+      throw new ConflictException("Match is not finished");
+    }
+  }
+
+  private MatchResponse toResponse(GameMatch match, UUID viewerUserId) {
     List<MatchSeatResponse> seats =
         seatRepository.findByMatchIdOrderBySideAsc(match.getId()).stream()
             .map(
@@ -231,6 +355,22 @@ public class MatchServiceImpl implements MatchService {
                         seat.getReady(),
                         seat.getJoinedAt()))
             .toList();
+
+    GameMatch pendingRematch =
+        matchRepository
+            .findTopByRematchSourceMatchIdAndStatusOrderByCreatedAtDesc(
+                match.getId(), MatchStatus.WAITING)
+            .orElse(null);
+    UUID pendingRematchMatchId = pendingRematch == null ? null : pendingRematch.getId();
+    UUID rematchRequestedByUserId =
+        pendingRematch == null
+            ? match.getRematchRequestedByUserId()
+            : pendingRematch.getRematchRequestedByUserId();
+    boolean viewerCanAcceptRematch =
+        pendingRematch != null
+            && viewerUserId != null
+            && !viewerUserId.equals(pendingRematch.getRematchRequestedByUserId())
+            && seatRepository.existsByMatchIdAndUserId(match.getId(), viewerUserId);
 
     return new MatchResponse(
         match.getId(),
@@ -244,6 +384,10 @@ public class MatchServiceImpl implements MatchService {
         match.getPreparationSeconds(),
         match.getInviteCode(),
         "/lobby/invite/" + match.getInviteCode(),
+        match.getRematchSourceMatchId(),
+        rematchRequestedByUserId,
+        pendingRematchMatchId,
+        viewerCanAcceptRematch,
         match.getHostUserId(),
         match.getWinnerUserId(),
         enumName(match.getWinnerSide()),

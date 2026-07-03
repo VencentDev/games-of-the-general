@@ -12,6 +12,7 @@ export type MatchSocketEvent =
       type: string;
       matchId: string;
       match: MatchSummary;
+      targetMatchId: string | null;
       occurredAt: string;
     }
   | {

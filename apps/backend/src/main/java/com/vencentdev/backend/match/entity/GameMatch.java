@@ -74,6 +74,12 @@ public class GameMatch extends AuditableEntity {
   @Column(name = "invite_code", nullable = false, unique = true, length = 32)
   private String inviteCode;
 
+  @Column(name = "rematch_source_match_id")
+  private UUID rematchSourceMatchId;
+
+  @Column(name = "rematch_requested_by_user_id")
+  private UUID rematchRequestedByUserId;
+
   @Column(name = "winner_user_id")
   private UUID winnerUserId;
 
