@@ -26,8 +26,9 @@ class SetupTimerServiceTest {
   private final MatchPieceRepository pieceRepository = Mockito.mock(MatchPieceRepository.class);
   private final MatchSeatRepository seatRepository = Mockito.mock(MatchSeatRepository.class);
   private final MatchRealtimeService realtimeService = Mockito.mock(MatchRealtimeService.class);
+  private final MatchPieceSetService pieceSetService = Mockito.mock(MatchPieceSetService.class);
   private final SetupTimerService service =
-      new SetupTimerService(pieceRepository, seatRepository, realtimeService);
+      new SetupTimerService(pieceRepository, seatRepository, realtimeService, pieceSetService);
 
   @Test
   void startsSetupTimerFromPreparationSeconds() {

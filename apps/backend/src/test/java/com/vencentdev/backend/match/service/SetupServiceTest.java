@@ -42,6 +42,7 @@ class SetupServiceTest {
       Mockito.mock(GameStateProjectionService.class);
   private final MatchRealtimeService realtimeService = Mockito.mock(MatchRealtimeService.class);
   private final SetupTimerService setupTimerService = Mockito.mock(SetupTimerService.class);
+  private final MatchPieceSetService pieceSetService = Mockito.mock(MatchPieceSetService.class);
   private final UserService userService = Mockito.mock(UserService.class);
   private final SetupService service =
       new SetupServiceImpl(
@@ -51,6 +52,7 @@ class SetupServiceTest {
           projectionService,
           realtimeService,
           setupTimerService,
+          pieceSetService,
           userService);
 
   @Test
