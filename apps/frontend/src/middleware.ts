@@ -6,13 +6,13 @@ export default function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   const hasSessionCookie = sessionCookieNames.some((name) => req.cookies.has(name));
 
-  if (pathname.startsWith('/lobby') && !hasSessionCookie) {
-    const url = new URL('/login', req.url);
+  if ((pathname.startsWith('/lobby') || pathname.startsWith('/matches')) && !hasSessionCookie) {
+    const url = new URL('/signup', req.url);
     url.searchParams.set('callbackUrl', req.url);
     return Response.redirect(url);
   }
 }
 
 export const config = {
-  matcher: ['/lobby/:path*'],
+  matcher: ['/lobby/:path*', '/matches/:path*'],
 };

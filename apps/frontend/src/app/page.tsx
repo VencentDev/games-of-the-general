@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { siteConfig } from '@/config/site';
 import { HomePageContent } from '@/features/home/landing/components/home-page-content';
+import { auth } from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: siteConfig.metadataTitle,
@@ -12,6 +13,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
-  return <HomePageContent />;
+export default async function HomePage() {
+  const session = await auth();
+
+  return <HomePageContent signedIn={!!session && !session.error} />;
 }
