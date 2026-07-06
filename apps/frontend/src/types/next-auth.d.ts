@@ -5,12 +5,16 @@ declare module 'next-auth' {
   interface Session {
     accessToken?: string;
     provider?: string;
+    error?: 'RefreshAccessTokenError';
   }
 }
 
 declare module 'next-auth/jwt' {
   interface JWT {
     accessToken?: string;
+    accessTokenExpiresAt?: number;
+    error?: 'RefreshAccessTokenError';
     provider?: string;
+    refreshToken?: string;
   }
 }
