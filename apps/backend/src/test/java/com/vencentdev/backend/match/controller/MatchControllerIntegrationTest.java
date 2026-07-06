@@ -277,6 +277,37 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
+  void findMatchDoesNotReturnStaleMatchedQueueEntryAfterLeavingMatch() throws Exception {
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-leave-first")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"));
+
+    String matchedBody =
+        mockMvc
+            .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-leave-second")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("MATCHED"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String oldMatchId = jsonString(matchedBody, "id");
+
+    mockMvc
+        .perform(
+            delete("/api/v1/matches/{matchId}/seat", oldMatchId)
+                .with(currentUser("matchmaking-leave-second")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-leave-second")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"))
+        .andExpect(jsonPath("$.match").doesNotExist());
+  }
+
+  @Test
   void findMatchReturnsExistingActiveMatchInsteadOfQueueing() throws Exception {
     String body =
         mockMvc

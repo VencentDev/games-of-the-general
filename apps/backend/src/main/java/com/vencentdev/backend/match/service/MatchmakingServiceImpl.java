@@ -77,7 +77,14 @@ public class MatchmakingServiceImpl implements MatchmakingService {
     if (currentEntry.isPresent()) {
       MatchmakingQueueEntry entry = currentEntry.get();
       if (entry.getStatus() == MatchmakingQueueStatus.MATCHED && entry.getMatchId() != null) {
-        return matched(findMatchForUpdate(entry.getMatchId()), userId);
+        GameMatch matchedMatch = findMatchForUpdate(entry.getMatchId());
+        if (ACTIVE_MATCH_STATUSES.contains(matchedMatch.getStatus())
+            && seatRepository.existsByMatchIdAndUserId(matchedMatch.getId(), userId)) {
+          return matched(matchedMatch, userId);
+        }
+
+        entry.setStatus(MatchmakingQueueStatus.CANCELLED);
+        entry.setMatchId(null);
       }
       if (entry.getStatus() == MatchmakingQueueStatus.WAITING) {
         return queued(entry);
