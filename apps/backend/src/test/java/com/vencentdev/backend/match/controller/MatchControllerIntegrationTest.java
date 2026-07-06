@@ -231,7 +231,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("MATCHED"))
             .andExpect(jsonPath("$.match.status").value("SETUP"))
-            .andExpect(jsonPath("$.match.visibility").value("PRIVATE"))
+            .andExpect(jsonPath("$.match.visibility").value("PUBLIC"))
             .andExpect(jsonPath("$.match.seats", hasSize(2)))
             .andExpect(jsonPath("$.match.seats[0].side").value("BLUE"))
             .andExpect(jsonPath("$.match.seats[1].side").value("RED"))

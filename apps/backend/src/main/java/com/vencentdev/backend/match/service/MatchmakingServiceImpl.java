@@ -171,7 +171,7 @@ public class MatchmakingServiceImpl implements MatchmakingService {
             GameMatch.builder()
                 .hostUserId(redUserId)
                 .name("Command table")
-                .visibility(MatchVisibility.PRIVATE)
+                .visibility(MatchVisibility.PUBLIC)
                 .status(MatchStatus.SETUP)
                 .phase(GamePhase.SETUP)
                 .moveNumber(0)
