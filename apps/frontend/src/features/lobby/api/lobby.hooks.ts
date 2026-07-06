@@ -44,6 +44,14 @@ export type MatchSummary = {
   seats: MatchSeat[];
 };
 
+export type MatchmakingStatus = 'ACTIVE' | 'QUEUED' | 'MATCHED';
+
+export type MatchmakingResponse = {
+  status: MatchmakingStatus;
+  match: MatchSummary | null;
+  enqueuedAt: string | null;
+};
+
 export type GameModel = {
   rows: number;
   columns: number;
@@ -192,6 +200,7 @@ export type CreateMatchInput = {
 export const lobbyKeys = {
   activeMatch: ['lobby', 'active-match'] as const,
   publicMatches: ['lobby', 'public-matches'] as const,
+  matchmaking: ['lobby', 'matchmaking'] as const,
   history: ['lobby', 'history'] as const,
   gameModel: ['lobby', 'game-model'] as const,
   settings: ['lobby', 'settings'] as const,
@@ -304,6 +313,45 @@ export function useCreateMatch() {
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
+    },
+  });
+}
+
+export function useFindMatch() {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      clientApi<MatchmakingResponse>(session?.accessToken, '/api/v1/matches/find', {
+        method: 'POST',
+      }),
+    onSuccess: (response) => {
+      if (response.match) {
+        queryClient.setQueryData(lobbyKeys.activeMatch, response.match);
+        queryClient.setQueryData(lobbyKeys.match(response.match.id), response.match);
+      }
+
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.matchmaking });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
+    },
+  });
+}
+
+export function useCancelFindMatch() {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      clientApi<void>(session?.accessToken, '/api/v1/matches/find/queue', {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.matchmaking });
+      void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
     },
   });
 }
