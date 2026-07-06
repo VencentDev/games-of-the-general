@@ -15,6 +15,7 @@ import com.vencentdev.backend.match.enums.lobby.MatchStatus;
 import com.vencentdev.backend.match.enums.state.GamePhase;
 import com.vencentdev.backend.match.repository.lobby.GameMatchRepository;
 import com.vencentdev.backend.match.repository.lobby.MatchSeatRepository;
+import com.vencentdev.backend.match.repository.lobby.MatchmakingQueueRepository;
 import com.vencentdev.backend.match.repository.lobby.PlayerLobbySettingsRepository;
 import com.vencentdev.backend.match.repository.state.MatchPieceRepository;
 import com.vencentdev.backend.user.repository.UserRepository;
@@ -31,12 +32,14 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   @Autowired private MockMvc mockMvc;
   @Autowired private MatchSeatRepository seatRepository;
   @Autowired private GameMatchRepository matchRepository;
+  @Autowired private MatchmakingQueueRepository queueRepository;
   @Autowired private MatchPieceRepository pieceRepository;
   @Autowired private PlayerLobbySettingsRepository settingsRepository;
   @Autowired private UserRepository userRepository;
 
   @BeforeEach
   void setUp() {
+    queueRepository.deleteAll();
     seatRepository.deleteAll();
     matchRepository.deleteAll();
     pieceRepository.deleteAll();
@@ -199,6 +202,112 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value(matchId))
         .andExpect(jsonPath("$.status").value("WAITING"));
+  }
+
+  @Test
+  void findMatchQueuesFirstPlayerAndMatchesSecondPlayer() throws Exception {
+    String firstBody =
+        mockMvc
+            .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-first")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("QUEUED"))
+            .andExpect(jsonPath("$.match").doesNotExist())
+            .andExpect(jsonPath("$.enqueuedAt").exists())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String firstEnqueuedAt = jsonString(firstBody, "enqueuedAt");
+
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-first")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"))
+        .andExpect(jsonPath("$.enqueuedAt").value(firstEnqueuedAt));
+
+    String secondBody =
+        mockMvc
+            .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-second")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("MATCHED"))
+            .andExpect(jsonPath("$.match.status").value("SETUP"))
+            .andExpect(jsonPath("$.match.visibility").value("PRIVATE"))
+            .andExpect(jsonPath("$.match.seats", hasSize(2)))
+            .andExpect(jsonPath("$.match.seats[0].side").value("BLUE"))
+            .andExpect(jsonPath("$.match.seats[1].side").value("RED"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String matchId = jsonString(secondBody, "id");
+
+    mockMvc
+        .perform(get("/api/v1/matches/active").with(currentUser("matchmaking-first")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(matchId))
+        .andExpect(jsonPath("$.status").value("SETUP"))
+        .andExpect(jsonPath("$.seats", hasSize(2)));
+
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-second")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("ACTIVE"))
+        .andExpect(jsonPath("$.match.id").value(matchId));
+
+    assertThatQueueCountIs(2);
+  }
+
+  @Test
+  void findMatchCanCancelWaitingQueueEntry() throws Exception {
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-cancel")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"));
+
+    mockMvc
+        .perform(delete("/api/v1/matches/find/queue").with(currentUser("matchmaking-cancel")))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-new-opponent")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"));
+
+    assertThatQueueCountIs(2);
+  }
+
+  @Test
+  void findMatchReturnsExistingActiveMatchInsteadOfQueueing() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("matchmaking-active"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Active before queue",
+                          "visibility": "PUBLIC",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 60
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String matchId = jsonString(body, "id");
+
+    mockMvc
+        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-active")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("ACTIVE"))
+        .andExpect(jsonPath("$.match.id").value(matchId))
+        .andExpect(jsonPath("$.enqueuedAt").doesNotExist());
+
+    assertThatQueueCountIs(0);
   }
 
   @Test
@@ -489,5 +598,9 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
 
   private String jsonString(String json, String fieldName) {
     return json.replaceAll(".*\\\"" + fieldName + "\\\":\\\"([^\\\"]+)\\\".*", "$1");
+  }
+
+  private void assertThatQueueCountIs(long count) {
+    org.assertj.core.api.Assertions.assertThat(queueRepository.count()).isEqualTo(count);
   }
 }
