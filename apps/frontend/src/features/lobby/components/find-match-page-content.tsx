@@ -39,10 +39,19 @@ export function FindMatchPageContent() {
   }, [cancelFindMatch]);
 
   useEffect(() => {
-    if (activeMatch.data?.id) {
+    if (
+      activeMatch.data?.id &&
+      activeMatch.fetchStatus === 'idle' &&
+      activeMatch.isFetchedAfterMount
+    ) {
       redirectToMatch(activeMatch.data.id);
     }
-  }, [activeMatch.data?.id, redirectToMatch]);
+  }, [
+    activeMatch.data?.id,
+    activeMatch.fetchStatus,
+    activeMatch.isFetchedAfterMount,
+    redirectToMatch,
+  ]);
 
   useEffect(() => {
     if (!isQueued) {

@@ -418,6 +418,7 @@ export function useLeaveMatch() {
         method: 'DELETE',
       }),
     onSuccess: (_match, matchId) => {
+      queryClient.setQueryData(lobbyKeys.activeMatch, null);
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
