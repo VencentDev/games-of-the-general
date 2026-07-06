@@ -118,6 +118,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [isLeavingMatch, setIsLeavingMatch] = useState(false);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [resultOverlay, setResultOverlay] = useState<{
@@ -218,7 +219,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const canMarkReady =
     state?.phase === 'SETUP' && activePlacedCount === 21 && !ownReady && !setupLocked;
   const canEditSetup = state?.phase === 'SETUP' && !ownReady && !setupLocked;
-  const shouldShowInvite = match.data?.visibility === 'PRIVATE' && match.data.seats.length === 1;
+  const shouldShowInvite =
+    match.data?.visibility === 'PRIVATE' &&
+    match.data.status === 'WAITING' &&
+    match.data.seats.length === 1 &&
+    match.data.seats[0]?.side === 'RED' &&
+    !leaveMatch.isPending &&
+    !isLeavingMatch;
   const inviteLink = useMemo(() => {
     if (!match.data) {
       return '';
@@ -352,8 +359,10 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   }, [movementOverlay]);
 
   function leave() {
+    setIsLeavingMatch(true);
     leaveMatch.mutate(matchId, {
       onSuccess: () => router.push('/lobby'),
+      onError: () => setIsLeavingMatch(false),
     });
   }
 
