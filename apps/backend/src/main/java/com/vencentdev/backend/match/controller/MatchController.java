@@ -4,7 +4,9 @@ import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.auth.CurrentUser;
 import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchmakingResponse;
 import com.vencentdev.backend.match.service.MatchService;
+import com.vencentdev.backend.match.service.MatchmakingService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -24,9 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class MatchController {
 
   private final MatchService service;
+  private final MatchmakingService matchmakingService;
 
-  public MatchController(MatchService service) {
+  public MatchController(MatchService service, MatchmakingService matchmakingService) {
     this.service = service;
+    this.matchmakingService = matchmakingService;
   }
 
   @PostMapping
@@ -52,6 +56,17 @@ public class MatchController {
         .active(user)
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.noContent().build());
+  }
+
+  @PostMapping("/find")
+  public MatchmakingResponse findMatch(@CurrentUser AuthenticatedUser user) {
+    return matchmakingService.findMatch(user);
+  }
+
+  @DeleteMapping("/find/queue")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void cancelFindMatch(@CurrentUser AuthenticatedUser user) {
+    matchmakingService.cancelFindMatch(user);
   }
 
   @GetMapping("/{matchId}")
