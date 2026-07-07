@@ -21,13 +21,13 @@ export function SessionErrorGate({ children }: { children: ReactNode }) {
     }
 
     redirectingRef.current = true;
-    void signOut({ redirectTo: signupRedirectUrl(pathname, searchParams.toString()) });
+    void signOut({ redirectTo: loginRedirectUrl(pathname, searchParams.toString()) });
   }, [pathname, searchParams, session?.error, status]);
 
   return <>{children}</>;
 }
 
-function signupRedirectUrl(pathname: string, search: string) {
+function loginRedirectUrl(pathname: string, search: string) {
   const callbackUrl = `${pathname}${search ? `?${search}` : ''}`;
-  return `/signup?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  return `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 }

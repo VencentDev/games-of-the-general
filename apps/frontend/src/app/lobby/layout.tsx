@@ -8,7 +8,7 @@ export default async function LobbyLayout({ children }: { children: ReactNode })
   const session = await auth();
 
   if (!session || session.error) {
-    redirect('/signup?callbackUrl=/lobby');
+    redirect('/login?callbackUrl=/lobby');
   }
 
   return <SessionErrorGate>{children}</SessionErrorGate>;
