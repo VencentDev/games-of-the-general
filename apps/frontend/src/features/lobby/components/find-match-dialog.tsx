@@ -21,6 +21,7 @@ const PREP_TIME_OPTIONS = [
 export function FindingMatchDialog({
   cancelPending,
   isSearching,
+  matchFound,
   onCancel,
   onOpenChange,
   onPreparationSecondsChange,
@@ -31,6 +32,7 @@ export function FindingMatchDialog({
 }: {
   cancelPending: boolean;
   isSearching: boolean;
+  matchFound?: boolean;
   onCancel: () => void;
   onOpenChange: (open: boolean) => void;
   onPreparationSecondsChange: (value: string) => void;
@@ -39,29 +41,33 @@ export function FindingMatchDialog({
   preparationSeconds: string;
   searchPending: boolean;
 }) {
+  const locked = isSearching || Boolean(matchFound);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-h-[calc(100svh-2rem)] max-w-sm gap-6 overflow-y-auto border-[#8a7b62]/25 bg-[#fbf8ef] p-6 text-[#201b16] shadow-2xl shadow-black/20 [&>button.absolute]:hidden dark:border-white/10 dark:bg-[#171b15] dark:text-[#f6f0e4]"
         onEscapeKeyDown={(event) => {
-          if (isSearching) {
+          if (locked) {
             event.preventDefault();
           }
         }}
         onInteractOutside={(event) => {
-          if (isSearching) {
+          if (locked) {
             event.preventDefault();
           }
         }}
       >
         <DialogHeader className="items-center text-center">
           <DialogTitle className="text-2xl font-black tracking-normal">
-            {isSearching ? 'Finding match' : 'Find match'}
+            {matchFound ? 'Found a match' : isSearching ? 'Finding match' : 'Find match'}
           </DialogTitle>
           <DialogDescription className="text-sm leading-6 text-[#655c51] dark:text-[#c9c1b4]">
-            {isSearching
-              ? 'Scanning the battlefield for an available commander.'
-              : 'Choose a preparation time. You will only match commanders using the same timer.'}
+            {matchFound
+              ? 'Preparing the command table. You will enter the match shortly.'
+              : isSearching
+                ? 'Scanning the battlefield for an available commander.'
+                : 'Choose a preparation time. You will only match commanders using the same timer.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -70,18 +76,18 @@ export function FindingMatchDialog({
           <PreparationTimeOptions
             value={preparationSeconds}
             onValueChange={onPreparationSecondsChange}
-            disabled={isSearching}
+            disabled={locked}
           />
         </div>
 
-        {isSearching ? (
+        {locked ? (
           <div className="mx-auto flex w-full max-w-64 flex-col items-center gap-4">
             <div className="got-radar" aria-hidden="true">
               <div className="got-radar-sweep" />
               <span className="got-radar-blip left-[31%] top-[28%]" />
               <span className="got-radar-blip got-radar-blip-delay left-[63%] top-[55%]" />
               <span className="got-radar-blip got-radar-blip-slow left-[47%] top-[71%]" />
-              <Search className="relative z-10 size-7 text-[#d7bd73]" />
+              <LoaderCircle className="relative z-10 size-7 animate-spin text-[#d7bd73]" />
             </div>
 
             <div className="grid w-full grid-cols-5 gap-1.5" aria-hidden="true">
@@ -96,7 +102,12 @@ export function FindingMatchDialog({
           </div>
         ) : null}
 
-        {isSearching ? (
+        {matchFound ? (
+          <div className="flex h-11 w-full items-center justify-center rounded-md border border-[#8a7b62]/25 bg-white/70 text-sm font-semibold text-[#655c51] dark:border-white/15 dark:bg-white/[0.06] dark:text-[#c9c1b4]">
+            <LoaderCircle className="mr-2 size-4 animate-spin" />
+            Loading match
+          </div>
+        ) : isSearching ? (
           <Button
             type="button"
             variant="outline"
