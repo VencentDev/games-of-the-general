@@ -224,12 +224,18 @@
   .got-scan-pulse {
     animation: got-scan-pulse 900ms ease-in-out infinite;
   }
+
+  .got-marquee {
+    animation: got-marquee 28s linear infinite;
+    will-change: transform;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .got-radar-sweep,
   .got-radar-blip,
-  .got-scan-pulse {
+  .got-scan-pulse,
+  .got-marquee {
     animation: none;
   }
 }
@@ -268,6 +274,12 @@
   50% {
     opacity: 1;
     transform: scaleY(1);
+  }
+}
+
+@keyframes got-marquee {
+  to {
+    transform: translateX(-50%);
   }
 }
 
