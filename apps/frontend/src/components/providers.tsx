@@ -42,7 +42,7 @@ export function Providers({ children }: { children: ReactNode }) {
 }
 
 function redirectOnAuthFailure(error: Error) {
-  if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+  if (!(error instanceof ApiError) || error.status !== 401) {
     return;
   }
 
