@@ -50,6 +50,17 @@ export type MatchmakingResponse = {
   status: MatchmakingStatus;
   match: MatchSummary | null;
   enqueuedAt: string | null;
+  preparationSeconds: number | null;
+};
+
+export type MatchChatMessage = {
+  id: string | null;
+  type: 'CHAT_MESSAGE' | 'CHAT_EVENT';
+  matchId: string;
+  subject: string;
+  displayName: string;
+  message: string;
+  occurredAt: string;
 };
 
 export type GameModel = {
@@ -197,6 +208,10 @@ export type CreateMatchInput = {
   preparationSeconds: number;
 };
 
+export type FindMatchInput = {
+  preparationSeconds: number;
+};
+
 export const lobbyKeys = {
   activeMatch: ['lobby', 'active-match'] as const,
   publicMatches: ['lobby', 'public-matches'] as const,
@@ -205,6 +220,7 @@ export const lobbyKeys = {
   gameModel: ['lobby', 'game-model'] as const,
   settings: ['lobby', 'settings'] as const,
   match: (matchId: string) => ['lobby', 'match', matchId] as const,
+  chat: (matchId: string) => ['lobby', 'match', matchId, 'chat'] as const,
   state: (matchId: string) => ['lobby', 'match', matchId, 'state'] as const,
   moves: (matchId: string) => ['lobby', 'match', matchId, 'moves'] as const,
   legalMoves: (matchId: string, pieceId: string | null) =>
@@ -266,6 +282,51 @@ export function useMatch(matchId: string) {
   });
 }
 
+export function useMatchChat(matchId: string) {
+  const { data: session } = useSession();
+
+  return useQuery({
+    queryKey: lobbyKeys.chat(matchId),
+    queryFn: () =>
+      clientApi<MatchChatMessage[]>(session?.accessToken, `/api/v1/matches/${matchId}/chat`),
+    enabled: !!session?.accessToken && !!matchId,
+  });
+}
+
+export function useClearMatchChat() {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (matchId: string) =>
+      clientApi<void>(session?.accessToken, `/api/v1/matches/${matchId}/chat`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (_, matchId) => {
+      queryClient.setQueryData(lobbyKeys.chat(matchId), []);
+    },
+  });
+}
+
+export function useSendMatchChat(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (message: string) =>
+      clientApi<MatchChatMessage>(session?.accessToken, `/api/v1/matches/${matchId}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    onSuccess: (message) => {
+      queryClient.setQueryData<MatchChatMessage[]>(lobbyKeys.chat(matchId), (current) => [
+        ...(current ?? []),
+        message,
+      ]);
+    },
+  });
+}
+
 export function useGameState(matchId: string) {
   const { data: session } = useSession();
 
@@ -322,9 +383,10 @@ export function useFindMatch() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () =>
+    mutationFn: (input: FindMatchInput) =>
       clientApi<MatchmakingResponse>(session?.accessToken, '/api/v1/matches/find', {
         method: 'POST',
+        body: JSON.stringify(input),
       }),
     onSuccess: (response) => {
       if (response.match) {
@@ -417,12 +479,21 @@ export function useLeaveMatch() {
       clientApi<MatchSummary>(session?.accessToken, `/api/v1/matches/${matchId}/seat`, {
         method: 'DELETE',
       }),
-    onSuccess: (_match, matchId) => {
+    onSuccess: async (_match, matchId) => {
+      await queryClient.cancelQueries({ queryKey: lobbyKeys.match(matchId) });
+      await queryClient.cancelQueries({ queryKey: lobbyKeys.state(matchId) });
+      await queryClient.cancelQueries({ queryKey: lobbyKeys.moves(matchId) });
+      await queryClient.cancelQueries({
+        queryKey: ['lobby', 'match', matchId, 'legal-moves'],
+      });
       queryClient.setQueryData(lobbyKeys.activeMatch, null);
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
-      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      queryClient.removeQueries({ queryKey: lobbyKeys.match(matchId) });
+      queryClient.removeQueries({ queryKey: lobbyKeys.state(matchId) });
+      queryClient.removeQueries({ queryKey: lobbyKeys.moves(matchId) });
+      queryClient.removeQueries({ queryKey: ['lobby', 'match', matchId, 'legal-moves'] });
     },
   });
 }

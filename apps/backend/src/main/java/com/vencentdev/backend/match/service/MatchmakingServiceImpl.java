@@ -4,6 +4,7 @@ import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.common.exception.ResourceNotFoundException;
 import com.vencentdev.backend.match.dto.lobby.MatchResponse;
 import com.vencentdev.backend.match.dto.lobby.MatchSeatResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchmakingRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchmakingResponse;
 import com.vencentdev.backend.match.dto.lobby.MatchmakingStatus;
 import com.vencentdev.backend.match.entity.GameMatch;
@@ -35,7 +36,7 @@ public class MatchmakingServiceImpl implements MatchmakingService {
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final char[] INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
   private static final Set<MatchStatus> ACTIVE_MATCH_STATUSES =
-      Set.of(MatchStatus.WAITING, MatchStatus.SETUP, MatchStatus.PLAYING);
+      Set.of(MatchStatus.SETUP, MatchStatus.PLAYING);
 
   private final GameMatchRepository matchRepository;
   private final MatchSeatRepository seatRepository;
@@ -61,7 +62,8 @@ public class MatchmakingServiceImpl implements MatchmakingService {
 
   @Override
   @Transactional
-  public MatchmakingResponse findMatch(AuthenticatedUser principal) {
+  public MatchmakingResponse findMatch(AuthenticatedUser principal, MatchmakingRequest request) {
+    int preparationSeconds = request == null ? 60 : request.preparationSeconds();
     UUID userId = userService.resolveInternalId(principal);
     Optional<GameMatch> activeMatch = findActiveMatchForUpdate(userId);
     if (activeMatch.isPresent()) {
@@ -87,14 +89,19 @@ public class MatchmakingServiceImpl implements MatchmakingService {
         entry.setMatchId(null);
       }
       if (entry.getStatus() == MatchmakingQueueStatus.WAITING) {
-        return queued(entry);
+        if (entry.getPreparationSeconds() == preparationSeconds) {
+          return queued(entry);
+        }
+
+        entry.setStatus(MatchmakingQueueStatus.CANCELLED);
+        entry.setMatchId(null);
       }
     }
 
     Optional<MatchmakingQueueEntry> opponentEntry =
-        queueRepository.findOldestOtherWaitingForUpdate(userId);
+        queueRepository.findOldestOtherWaitingForUpdate(userId, preparationSeconds);
     if (opponentEntry.isEmpty()) {
-      return queued(upsertWaitingEntry(userId, currentEntry.orElse(null)));
+      return queued(upsertWaitingEntry(userId, preparationSeconds, currentEntry.orElse(null)));
     }
 
     MatchmakingQueueEntry opponent = opponentEntry.get();
@@ -102,11 +109,13 @@ public class MatchmakingServiceImpl implements MatchmakingService {
     if (opponentActiveMatch.isPresent()) {
       opponent.setStatus(MatchmakingQueueStatus.CANCELLED);
       opponent.setMatchId(null);
-      return queued(upsertWaitingEntry(userId, currentEntry.orElse(null)));
+      return queued(upsertWaitingEntry(userId, preparationSeconds, currentEntry.orElse(null)));
     }
 
-    MatchmakingQueueEntry current = currentEntry.orElseGet(() -> newWaitingEntry(userId));
-    GameMatch match = createMatch(opponent.getUserId(), userId);
+    MatchmakingQueueEntry current =
+        currentEntry.orElseGet(() -> newWaitingEntry(userId, preparationSeconds));
+    current.setPreparationSeconds(preparationSeconds);
+    GameMatch match = createMatch(opponent.getUserId(), userId, preparationSeconds);
     opponent.setStatus(MatchmakingQueueStatus.MATCHED);
     opponent.setMatchId(match.getId());
     current.setStatus(MatchmakingQueueStatus.MATCHED);
@@ -115,7 +124,8 @@ public class MatchmakingServiceImpl implements MatchmakingService {
 
     MatchResponse response = toResponse(match, userId);
     realtimeService.publishMatchEvent("PLAYER_JOINED", response);
-    return new MatchmakingResponse(MatchmakingStatus.MATCHED, response, current.getEnqueuedAt());
+    return new MatchmakingResponse(
+        MatchmakingStatus.MATCHED, response, current.getEnqueuedAt(), preparationSeconds);
   }
 
   @Override
@@ -133,29 +143,37 @@ public class MatchmakingServiceImpl implements MatchmakingService {
   }
 
   private MatchmakingQueueEntry upsertWaitingEntry(
-      UUID userId, MatchmakingQueueEntry existingEntry) {
+      UUID userId, int preparationSeconds, MatchmakingQueueEntry existingEntry) {
     Instant now = queueTimestamp();
     if (existingEntry != null) {
       existingEntry.setStatus(MatchmakingQueueStatus.WAITING);
       existingEntry.setMatchId(null);
+      existingEntry.setPreparationSeconds(preparationSeconds);
       existingEntry.setEnqueuedAt(now);
       return existingEntry;
     }
 
     try {
-      MatchmakingQueueEntry entry = newWaitingEntry(userId);
+      MatchmakingQueueEntry entry = newWaitingEntry(userId, preparationSeconds);
       queueRepository.saveAndFlush(entry);
       return entry;
     } catch (DataIntegrityViolationException exception) {
-      return queueRepository
-          .findByUserIdForUpdate(userId)
-          .orElseThrow(() -> new ResourceNotFoundException("Queue entry not found"));
+      MatchmakingQueueEntry entry =
+          queueRepository
+              .findByUserIdForUpdate(userId)
+              .orElseThrow(() -> new ResourceNotFoundException("Queue entry not found"));
+      entry.setStatus(MatchmakingQueueStatus.WAITING);
+      entry.setMatchId(null);
+      entry.setPreparationSeconds(preparationSeconds);
+      entry.setEnqueuedAt(now);
+      return entry;
     }
   }
 
-  private MatchmakingQueueEntry newWaitingEntry(UUID userId) {
+  private MatchmakingQueueEntry newWaitingEntry(UUID userId, int preparationSeconds) {
     return MatchmakingQueueEntry.builder()
         .userId(userId)
+        .preparationSeconds(preparationSeconds)
         .status(MatchmakingQueueStatus.WAITING)
         .enqueuedAt(queueTimestamp())
         .build();
@@ -165,7 +183,7 @@ public class MatchmakingServiceImpl implements MatchmakingService {
     return Instant.now().truncatedTo(ChronoUnit.MICROS);
   }
 
-  private GameMatch createMatch(UUID redUserId, UUID blueUserId) {
+  private GameMatch createMatch(UUID redUserId, UUID blueUserId, int preparationSeconds) {
     GameMatch match =
         matchRepository.save(
             GameMatch.builder()
@@ -176,7 +194,7 @@ public class MatchmakingServiceImpl implements MatchmakingService {
                 .phase(GamePhase.SETUP)
                 .moveNumber(0)
                 .mode("Classic hidden ranks")
-                .preparationSeconds(60)
+                .preparationSeconds(preparationSeconds)
                 .inviteCode(uniqueInviteCode())
                 .build());
 
@@ -216,16 +234,24 @@ public class MatchmakingServiceImpl implements MatchmakingService {
   }
 
   private MatchmakingResponse active(GameMatch match, UUID viewerUserId) {
-    return new MatchmakingResponse(MatchmakingStatus.ACTIVE, toResponse(match, viewerUserId), null);
+    return new MatchmakingResponse(
+        MatchmakingStatus.ACTIVE,
+        toResponse(match, viewerUserId),
+        null,
+        match.getPreparationSeconds());
   }
 
   private MatchmakingResponse matched(GameMatch match, UUID viewerUserId) {
     return new MatchmakingResponse(
-        MatchmakingStatus.MATCHED, toResponse(match, viewerUserId), null);
+        MatchmakingStatus.MATCHED,
+        toResponse(match, viewerUserId),
+        null,
+        match.getPreparationSeconds());
   }
 
   private MatchmakingResponse queued(MatchmakingQueueEntry entry) {
-    return new MatchmakingResponse(MatchmakingStatus.QUEUED, null, entry.getEnqueuedAt());
+    return new MatchmakingResponse(
+        MatchmakingStatus.QUEUED, null, entry.getEnqueuedAt(), entry.getPreparationSeconds());
   }
 
   private MatchResponse toResponse(GameMatch match, UUID viewerUserId) {

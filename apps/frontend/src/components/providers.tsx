@@ -42,7 +42,7 @@ export function Providers({ children }: { children: ReactNode }) {
 }
 
 function redirectOnAuthFailure(error: Error) {
-  if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+  if (!(error instanceof ApiError) || error.status !== 401) {
     return;
   }
 
@@ -51,14 +51,14 @@ function redirectOnAuthFailure(error: Error) {
   }
 
   authFailureRedirecting = true;
-  void signOut({ redirectTo: signupRedirectUrl() });
+  void signOut({ redirectTo: loginRedirectUrl() });
 }
 
-function signupRedirectUrl() {
+function loginRedirectUrl() {
   if (typeof window === 'undefined') {
-    return '/signup?callbackUrl=/lobby';
+    return '/login?callbackUrl=/lobby';
   }
 
   const callbackUrl = `${window.location.pathname}${window.location.search}`;
-  return `/signup?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  return `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 }

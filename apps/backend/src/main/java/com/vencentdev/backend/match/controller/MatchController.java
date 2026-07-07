@@ -2,9 +2,14 @@ package com.vencentdev.backend.match.controller;
 
 import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.auth.CurrentUser;
+import com.vencentdev.backend.match.dto.lobby.MatchChatMessage;
+import com.vencentdev.backend.match.dto.lobby.MatchChatRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchmakingRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchmakingResponse;
+import com.vencentdev.backend.match.service.MatchChatService;
+import com.vencentdev.backend.match.service.MatchRealtimeService;
 import com.vencentdev.backend.match.service.MatchService;
 import com.vencentdev.backend.match.service.MatchmakingService;
 import jakarta.validation.Valid;
@@ -27,10 +32,18 @@ public class MatchController {
 
   private final MatchService service;
   private final MatchmakingService matchmakingService;
+  private final MatchChatService chatService;
+  private final MatchRealtimeService realtimeService;
 
-  public MatchController(MatchService service, MatchmakingService matchmakingService) {
+  public MatchController(
+      MatchService service,
+      MatchmakingService matchmakingService,
+      MatchChatService chatService,
+      MatchRealtimeService realtimeService) {
     this.service = service;
     this.matchmakingService = matchmakingService;
+    this.chatService = chatService;
+    this.realtimeService = realtimeService;
   }
 
   @PostMapping
@@ -59,8 +72,10 @@ public class MatchController {
   }
 
   @PostMapping("/find")
-  public MatchmakingResponse findMatch(@CurrentUser AuthenticatedUser user) {
-    return matchmakingService.findMatch(user);
+  public MatchmakingResponse findMatch(
+      @CurrentUser AuthenticatedUser user,
+      @Valid @RequestBody(required = false) MatchmakingRequest request) {
+    return matchmakingService.findMatch(user, request);
   }
 
   @DeleteMapping("/find/queue")
@@ -72,6 +87,30 @@ public class MatchController {
   @GetMapping("/{matchId}")
   public MatchResponse get(@CurrentUser AuthenticatedUser user, @PathVariable UUID matchId) {
     return service.get(user, matchId);
+  }
+
+  @GetMapping("/{matchId}/chat")
+  public List<MatchChatMessage> chat(
+      @CurrentUser AuthenticatedUser user, @PathVariable UUID matchId) {
+    return chatService.list(matchId, user);
+  }
+
+  @PostMapping("/{matchId}/chat")
+  @ResponseStatus(HttpStatus.CREATED)
+  public MatchChatMessage sendChat(
+      @CurrentUser AuthenticatedUser user,
+      @PathVariable UUID matchId,
+      @RequestBody MatchChatRequest request) {
+    MatchChatMessage message =
+        chatService.send(matchId, user, request == null ? null : request.message());
+    realtimeService.publishChatMessage(message);
+    return message;
+  }
+
+  @DeleteMapping("/{matchId}/chat")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void clearChat(@CurrentUser AuthenticatedUser user, @PathVariable UUID matchId) {
+    chatService.deleteForMatch(matchId, user);
   }
 
   @GetMapping("/invite/{inviteCode}")

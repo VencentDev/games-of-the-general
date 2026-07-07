@@ -1,16 +1,12 @@
 package com.vencentdev.backend.match.entity;
 
 import com.vencentdev.backend.common.persistence.AuditableEntity;
-import com.vencentdev.backend.match.enums.lobby.MatchmakingQueueStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.Instant;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -21,33 +17,35 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "matchmaking_queue_entries")
+@Table(name = "match_chat_messages")
 @Getter
 @Setter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 @AllArgsConstructor
 @Builder
 @EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
-public class MatchmakingQueueEntry extends AuditableEntity {
+public class MatchChatMessageEntity extends AuditableEntity {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
   @EqualsAndHashCode.Include
   private UUID id;
 
-  @Column(name = "user_id", nullable = false, unique = true)
-  private UUID userId;
-
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 24)
-  private MatchmakingQueueStatus status;
-
-  @Column(name = "match_id")
+  @Column(name = "match_id", nullable = false)
   private UUID matchId;
 
-  @Column(name = "preparation_seconds", nullable = false)
-  private Integer preparationSeconds;
+  @Column(name = "user_id")
+  private UUID userId;
 
-  @Column(name = "enqueued_at", nullable = false)
-  private Instant enqueuedAt;
+  @Column(nullable = false, length = 40)
+  private String type;
+
+  @Column(nullable = false, length = 255)
+  private String subject;
+
+  @Column(name = "display_name", nullable = false, length = 120)
+  private String displayName;
+
+  @Column(nullable = false, length = 500)
+  private String message;
 }

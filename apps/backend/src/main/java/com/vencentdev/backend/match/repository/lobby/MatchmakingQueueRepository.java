@@ -22,11 +22,14 @@ public interface MatchmakingQueueRepository extends JpaRepository<MatchmakingQue
           """
           select *
           from matchmaking_queue_entries
-          where status = 'WAITING' and user_id <> :userId
+          where status = 'WAITING'
+            and user_id <> :userId
+            and preparation_seconds = :preparationSeconds
           order by enqueued_at asc
           limit 1
           for update skip locked
           """,
       nativeQuery = true)
-  Optional<MatchmakingQueueEntry> findOldestOtherWaitingForUpdate(@Param("userId") UUID userId);
+  Optional<MatchmakingQueueEntry> findOldestOtherWaitingForUpdate(
+      @Param("userId") UUID userId, @Param("preparationSeconds") int preparationSeconds);
 }

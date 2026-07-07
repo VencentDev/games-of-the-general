@@ -7,7 +7,7 @@ export default function middleware(req: NextRequest) {
   const hasSessionCookie = sessionCookieNames.some((name) => req.cookies.has(name));
 
   if ((pathname.startsWith('/lobby') || pathname.startsWith('/matches')) && !hasSessionCookie) {
-    const url = new URL('/signup', req.url);
+    const url = new URL('/login', req.url);
     url.searchParams.set('callbackUrl', req.url);
     return Response.redirect(url);
   }

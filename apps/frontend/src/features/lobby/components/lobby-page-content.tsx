@@ -1,9 +1,9 @@
 'use client';
 
-import { Eye, History, Lock, Plus, Search, Settings, Shield } from 'lucide-react';
+import { History, Plus, Search, Settings, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,48 +17,100 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  type MatchVisibility,
+  useActiveMatch,
+  useCancelFindMatch,
   useCreateMatch,
+  useFindMatch,
   useGameModel,
   usePlayerLobbySettings,
   usePublicMatches,
 } from '@/features/lobby/api/lobby.hooks';
-
-const PREP_TIME_OPTIONS = [
-  { label: 'No time', value: '0' },
-  { label: '30 seconds', value: '30' },
-  { label: '1 minute', value: '60' },
-  { label: '1 minute 30 seconds', value: '90' },
-];
+import { FindingMatchDialog, PreparationTimeOptions } from './find-match-dialog';
 
 export function LobbyPageContent() {
   const router = useRouter();
+  const activeMatch = useActiveMatch();
+  const cancelFindMatch = useCancelFindMatch();
   const createMatch = useCreateMatch();
+  const findMatch = useFindMatch();
   const publicMatches = usePublicMatches();
   const gameModel = useGameModel();
   const settings = usePlayerLobbySettings();
   const [createOpen, setCreateOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [isQueued, setIsQueued] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [visibility, setVisibility] = useState<MatchVisibility>('PUBLIC');
   const [preparationSeconds, setPreparationSeconds] = useState('60');
+  const [findPreparationSeconds, setFindPreparationSeconds] = useState('60');
+  const shouldCancelOnUnmountRef = useRef(false);
+  const redirectingRef = useRef(false);
+  const cancelQueuedSearchRef = useRef<() => void>(() => undefined);
 
   const activePlayers = useMemo(
     () => (publicMatches.data ?? []).reduce((total, match) => total + match.seats.length, 0),
     [publicMatches.data],
   );
 
+  const redirectToMatch = useCallback(
+    (matchId: string) => {
+      redirectingRef.current = true;
+      shouldCancelOnUnmountRef.current = false;
+      setIsQueued(false);
+      router.replace(`/matches/${matchId}`);
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    shouldCancelOnUnmountRef.current = isQueued;
+  }, [isQueued]);
+
+  useEffect(() => {
+    cancelQueuedSearchRef.current = () => {
+      cancelFindMatch.mutate();
+    };
+  }, [cancelFindMatch]);
+
+  useEffect(() => {
+    if (
+      activeMatch.data?.id &&
+      activeMatch.fetchStatus === 'idle' &&
+      activeMatch.isFetchedAfterMount
+    ) {
+      redirectToMatch(activeMatch.data.id);
+    }
+  }, [
+    activeMatch.data?.id,
+    activeMatch.fetchStatus,
+    activeMatch.isFetchedAfterMount,
+    redirectToMatch,
+  ]);
+
+  useEffect(() => {
+    if (!isQueued) {
+      return undefined;
+    }
+
+    const interval = window.setInterval(() => {
+      void activeMatch.refetch();
+    }, 1_500);
+
+    return () => window.clearInterval(interval);
+  }, [activeMatch, isQueued]);
+
+  useEffect(() => {
+    return () => {
+      if (shouldCancelOnUnmountRef.current && !redirectingRef.current) {
+        cancelQueuedSearchRef.current();
+      }
+    };
+  }, []);
+
   function create() {
     createMatch.mutate(
       {
         name: 'Command table',
-        visibility,
+        visibility: 'PRIVATE',
         mode: 'Classic hidden ranks',
         preparationSeconds: Number(preparationSeconds),
       },
@@ -71,6 +123,33 @@ export function LobbyPageContent() {
     );
   }
 
+  function startSearch() {
+    findMatch.mutate(
+      { preparationSeconds: Number(findPreparationSeconds) },
+      {
+        onSuccess: (response) => {
+          if (response.match?.id) {
+            redirectToMatch(response.match.id);
+            return;
+          }
+
+          if (response.status === 'QUEUED') {
+            setIsQueued(true);
+          }
+        },
+      },
+    );
+  }
+
+  function cancelSearch() {
+    shouldCancelOnUnmountRef.current = false;
+    setFindOpen(false);
+    setIsQueued(false);
+    cancelFindMatch.mutate();
+  }
+
+  const isSearching = findMatch.isPending || isQueued;
+
   return (
     <main className="-mx-4 -my-6 min-h-[calc(100svh-3.5rem)] bg-[#f5f1e6] px-4 py-6 text-[#201b16] dark:bg-[#10130f] dark:text-[#f6f0e4] md:px-8">
       <section className="mx-auto grid min-h-[calc(100svh-7rem)] max-w-7xl gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -78,7 +157,12 @@ export function LobbyPageContent() {
 
         <aside className="flex flex-col justify-center gap-3">
           <ActionButton icon={Plus} label="Create match" onClick={() => setCreateOpen(true)} />
-          <ActionLink href="/lobby/find" icon={Search} label="Find match" />
+          <ActionButton
+            icon={Search}
+            label="Find match"
+            onClick={() => setFindOpen(true)}
+            disabled={isSearching || cancelFindMatch.isPending}
+          />
           <ActionLink href="/lobby/history" icon={History} label="History" />
           <ActionButton icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
         </aside>
@@ -90,13 +174,27 @@ export function LobbyPageContent() {
         onCreate={create}
         onOpenChange={setCreateOpen}
         onPreparationSecondsChange={setPreparationSeconds}
-        onVisibilityChange={setVisibility}
         open={createOpen}
         preparationSeconds={preparationSeconds}
-        visibility={visibility}
       />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} settings={settings.data} />
+
+      <FindingMatchDialog
+        cancelPending={cancelFindMatch.isPending}
+        isSearching={isSearching}
+        onOpenChange={(open) => {
+          if (!isSearching) {
+            setFindOpen(open);
+          }
+        }}
+        onCancel={cancelSearch}
+        onPreparationSecondsChange={setFindPreparationSeconds}
+        onStart={startSearch}
+        open={findOpen || isSearching}
+        preparationSeconds={findPreparationSeconds}
+        searchPending={findMatch.isPending}
+      />
     </main>
   );
 }
@@ -167,10 +265,12 @@ function RulesBoard({
 }
 
 function ActionButton({
+  disabled,
   icon: Icon,
   label,
   onClick,
 }: {
+  disabled?: boolean;
   icon: typeof Plus;
   label: string;
   onClick: () => void;
@@ -179,6 +279,7 @@ function ActionButton({
     <Button
       type="button"
       className="h-16 justify-start rounded-lg border border-[#8a7b62]/25 bg-[#fbf8ef] px-5 text-left text-lg font-black text-[#201b16] shadow-sm hover:bg-white/80 dark:border-white/10 dark:bg-white/[0.04] dark:text-[#f6f0e4] dark:hover:bg-white/10"
+      disabled={disabled}
       onClick={onClick}
     >
       <Icon className="mr-3 size-5 text-[#8f2f24] dark:text-[#f29a7f]" />
@@ -215,63 +316,34 @@ function CreateMatchDialog({
   onCreate,
   onOpenChange,
   onPreparationSecondsChange,
-  onVisibilityChange,
   open,
   preparationSeconds,
-  visibility,
 }: {
   createError: Error | null;
   isCreating: boolean;
   onCreate: () => void;
   onOpenChange: (open: boolean) => void;
   onPreparationSecondsChange: (value: string) => void;
-  onVisibilityChange: (value: MatchVisibility) => void;
   open: boolean;
   preparationSeconds: string;
-  visibility: MatchVisibility;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[#8a7b62]/25 bg-[#fbf8ef] text-[#201b16] dark:border-white/10 dark:bg-[#181b15] dark:text-[#f6f0e4] sm:max-w-xl">
+      <DialogContent className="max-w-sm border-[#8a7b62]/25 bg-[#fbf8ef] text-[#201b16] dark:border-white/10 dark:bg-[#181b15] dark:text-[#f6f0e4]">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black tracking-normal">Create match</DialogTitle>
           <DialogDescription className="text-sm leading-6 text-[#655c51] dark:text-[#c9c1b4]">
-            Choose visibility and preparation time before creating the table.
+            Create a private invite table and choose its preparation time.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <VisibilityOption
-              active={visibility === 'PUBLIC'}
-              description="Visible in Find Match"
-              icon={Eye}
-              label="Public"
-              onSelect={() => onVisibilityChange('PUBLIC')}
-            />
-            <VisibilityOption
-              active={visibility === 'PRIVATE'}
-              description="Invite link only"
-              icon={Lock}
-              label="Private"
-              onSelect={() => onVisibilityChange('PRIVATE')}
-            />
-          </div>
-
           <div className="space-y-2">
             <Label>Preparation time</Label>
-            <Select value={preparationSeconds} onValueChange={onPreparationSecondsChange}>
-              <SelectTrigger className="border-[#8a7b62]/30 bg-white/70 dark:border-white/15 dark:bg-white/5">
-                <SelectValue placeholder="Select preparation time" />
-              </SelectTrigger>
-              <SelectContent>
-                {PREP_TIME_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PreparationTimeOptions
+              value={preparationSeconds}
+              onValueChange={onPreparationSecondsChange}
+            />
           </div>
 
           {createError ? (
@@ -281,10 +353,10 @@ function CreateMatchDialog({
           ) : null}
         </div>
 
-        <DialogFooter className="gap-2 sm:justify-between">
+        <DialogFooter>
           <Button
             type="button"
-            className="bg-[#2c3520] text-[#fff8ea] hover:bg-[#202817] dark:bg-[#d7bd73] dark:text-[#15130d] dark:hover:bg-[#e7ce88]"
+            className="w-full bg-[#2c3520] text-[#fff8ea] hover:bg-[#202817] dark:bg-[#d7bd73] dark:text-[#15130d] dark:hover:bg-[#e7ce88]"
             disabled={isCreating}
             onClick={onCreate}
           >
@@ -294,41 +366,6 @@ function CreateMatchDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function VisibilityOption({
-  active,
-  description,
-  icon: Icon,
-  label,
-  onSelect,
-}: {
-  active: boolean;
-  description: string;
-  icon: typeof Eye;
-  label: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={[
-        'cursor-pointer rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8f2f24]',
-        active
-          ? 'border-[#8f2f24] bg-[#fff3df] dark:border-[#f29a7f] dark:bg-[#8f2f24]/15'
-          : 'border-[#8a7b62]/25 bg-white/55 hover:bg-white/80 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10',
-      ].join(' ')}
-    >
-      <span className="flex items-center gap-2 text-sm font-black">
-        <Icon className="size-4 text-[#8f2f24] dark:text-[#f29a7f]" />
-        {label}
-      </span>
-      <span className="mt-2 block text-xs leading-5 text-[#655c51] dark:text-[#c9c1b4]">
-        {description}
-      </span>
-    </button>
   );
 }
 

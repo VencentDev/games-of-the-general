@@ -39,6 +39,7 @@ public class MatchServiceImpl implements MatchService {
   private final GameMatchRepository matchRepository;
   private final MatchSeatRepository seatRepository;
   private final MatchRealtimeService realtimeService;
+  private final MatchChatService chatService;
   private final SetupTimerService setupTimerService;
   private final UserService userService;
 
@@ -46,11 +47,13 @@ public class MatchServiceImpl implements MatchService {
       GameMatchRepository matchRepository,
       MatchSeatRepository seatRepository,
       MatchRealtimeService realtimeService,
+      MatchChatService chatService,
       SetupTimerService setupTimerService,
       UserService userService) {
     this.matchRepository = matchRepository;
     this.seatRepository = seatRepository;
     this.realtimeService = realtimeService;
+    this.chatService = chatService;
     this.setupTimerService = setupTimerService;
     this.userService = userService;
   }
@@ -208,7 +211,12 @@ public class MatchServiceImpl implements MatchService {
     }
 
     MatchResponse response = toResponse(match, userId);
+    chatService.addEvent(match.getId(), "A player left the match.");
     realtimeService.publishMatchEvent("PLAYER_LEFT", response);
+    if (match.getStatus() == MatchStatus.CANCELLED
+        || seatRepository.findByMatchIdOrderBySideAsc(match.getId()).isEmpty()) {
+      chatService.deleteForMatch(match.getId());
+    }
     return response;
   }
 
@@ -280,6 +288,7 @@ public class MatchServiceImpl implements MatchService {
             .build());
 
     MatchResponse sourceResponse = toResponse(source, userId);
+    chatService.addEvent(source.getId(), "Rematch offered.");
     realtimeService.publishMatchEvent("REMATCH_REQUESTED", sourceResponse);
     return toResponse(rematch, userId);
   }
@@ -323,6 +332,7 @@ public class MatchServiceImpl implements MatchService {
     realtimeService.publishMatchEvent("PLAYER_JOINED", rematchResponse);
     realtimeService.publishMatchEvent(
         "REMATCH_ACCEPTED", toResponse(source, userId), rematch.getId());
+    chatService.deleteForMatch(source.getId());
     return rematchResponse;
   }
 

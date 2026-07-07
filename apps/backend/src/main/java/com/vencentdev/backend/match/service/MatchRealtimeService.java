@@ -1,5 +1,6 @@
 package com.vencentdev.backend.match.service;
 
+import com.vencentdev.backend.match.dto.lobby.MatchChatMessage;
 import com.vencentdev.backend.match.dto.lobby.MatchPresenceMessage;
 import com.vencentdev.backend.match.dto.lobby.MatchRealtimeEvent;
 import com.vencentdev.backend.match.dto.lobby.MatchResponse;
@@ -36,6 +37,17 @@ public class MatchRealtimeService {
   public void publishMatchSignal(String type, UUID matchId, String subject) {
     messagingTemplate.convertAndSend(
         matchTopic(matchId), new MatchPresenceMessage(type, matchId, subject, Instant.now()));
+  }
+
+  public void publishChatMessage(UUID matchId, String subject, String displayName, String message) {
+    messagingTemplate.convertAndSend(
+        matchTopic(matchId),
+        new MatchChatMessage(
+            null, "CHAT_MESSAGE", matchId, subject, displayName, message, Instant.now()));
+  }
+
+  public void publishChatMessage(MatchChatMessage message) {
+    messagingTemplate.convertAndSend(matchTopic(message.matchId()), message);
   }
 
   private String matchTopic(UUID matchId) {

@@ -3,7 +3,16 @@
 import Link from 'next/link';
 import Image, { type StaticImageData } from 'next/image';
 import { useRouter } from 'next/navigation';
-import { type CSSProperties, type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type DragEvent,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -49,18 +58,23 @@ import spyImage from '@/assets/gg assets/spy.png';
 import threeStarImage from '@/assets/gg assets/3star.png';
 import twoStarImage from '@/assets/gg assets/2star.png';
 import wonImage from '@/assets/gg assets/won.png';
-import { useMatchSocket } from '@/features/lobby/api/match-socket.hook';
+import { type MatchSocketEvent, useMatchSocket } from '@/features/lobby/api/match-socket.hook';
+import { FindingMatchDialog } from '@/features/lobby/components/find-match-dialog';
 import {
   type BoardSquare,
   type GameState,
   type MatchSeat,
+  type MatchChatMessage,
   type MoveHistory,
   type PieceDefinition,
   type PieceInstance,
   type PieceType,
   type PlayerSide,
   type SetupPieceInput,
-  useCreateMatch,
+  useActiveMatch,
+  useCancelFindMatch,
+  useClearMatchChat,
+  useFindMatch,
   useGameModel,
   useGameState,
   useAcceptRematch,
@@ -68,9 +82,11 @@ import {
   useLegalMoves,
   useMarkReady,
   useMatch,
+  useMatchChat,
   useMoveHistory,
   useMovePiece,
   useRequestRematch,
+  useSendMatchChat,
   useUpdateSetup,
 } from '@/features/lobby/api/lobby.hooks';
 import { ApiError } from '@/lib/api';
@@ -101,24 +117,45 @@ type EmptySquare = BoardSquare & {
   piece: null;
 };
 
+type ChatTimelineItem =
+  | {
+      kind: 'message';
+      id: string;
+      displayName: string;
+      message: string;
+      occurredAt: string;
+    }
+  | {
+      kind: 'event';
+      id: string;
+      message: string;
+    };
+
 export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const router = useRouter();
   const match = useMatch(matchId);
   const gameModel = useGameModel();
   const gameState = useGameState(matchId);
   const moveHistory = useMoveHistory(matchId);
+  const matchChat = useMatchChat(matchId);
+  const sendMatchChat = useSendMatchChat(matchId);
+  const clearMatchChat = useClearMatchChat();
   const leaveMatch = useLeaveMatch();
   const updateSetup = useUpdateSetup(matchId);
   const markReady = useMarkReady(matchId);
   const movePiece = useMovePiece(matchId);
-  const createMatch = useCreateMatch();
+  const activeMatch = useActiveMatch();
+  const cancelFindMatch = useCancelFindMatch();
+  const findMatch = useFindMatch();
   const requestRematch = useRequestRematch(matchId);
   const acceptRematch = useAcceptRematch(matchId);
   const socket = useMatchSocket(matchId);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [isQueuedForNewMatch, setIsQueuedForNewMatch] = useState(false);
   const [isLeavingMatch, setIsLeavingMatch] = useState(false);
+  const [chatDraft, setChatDraft] = useState('');
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [resultOverlay, setResultOverlay] = useState<{
@@ -135,6 +172,10 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const lastSeenMoveNumberRef = useRef(0);
   const gameOverShownRef = useRef(false);
   const redirectedRematchRef = useRef<string | null>(null);
+  const shouldCancelNewMatchSearchOnUnmountRef = useRef(false);
+  const redirectingNewMatchRef = useRef(false);
+  const cancelNewMatchSearchRef = useRef<() => void>(() => undefined);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const state = gameState.data;
   const viewerSide = state?.viewerSide;
@@ -189,6 +230,18 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     }) as Array<BoardSquare | EmptySquare>;
   }, [board, viewerSide]);
 
+  const chatItems = useMemo(() => {
+    const storedItems = (matchChat.data ?? []).map(chatItemFromChatMessage);
+    const liveItems = socket.events
+      .slice()
+      .reverse()
+      .flatMap((event) => chatItemFromSocketEvent(event));
+
+    return Array.from(
+      new Map([...storedItems, ...liveItems].map((item) => [item.id, item])).values(),
+    );
+  }, [matchChat.data, socket.events]);
+
   const legalTargets = useMemo(() => {
     return new Map(
       (legalMoves.data ?? []).map((move) => [
@@ -235,11 +288,69 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     return `${base}/lobby/invite/${match.data.inviteCode}`;
   }, [match.data]);
 
+  const redirectToNewMatch = useCallback(
+    (targetMatchId: string) => {
+      redirectingNewMatchRef.current = true;
+      shouldCancelNewMatchSearchOnUnmountRef.current = false;
+      if (match.data?.phase === 'GAME_OVER') {
+        clearMatchChat.mutate(matchId);
+      }
+      setIsQueuedForNewMatch(false);
+      router.replace(`/matches/${targetMatchId}`);
+    },
+    [clearMatchChat, match.data?.phase, matchId, router],
+  );
+
   useEffect(() => {
     if (shouldShowInvite) {
       setInviteOpen(true);
     }
   }, [shouldShowInvite]);
+
+  useEffect(() => {
+    shouldCancelNewMatchSearchOnUnmountRef.current = isQueuedForNewMatch;
+  }, [isQueuedForNewMatch]);
+
+  useEffect(() => {
+    cancelNewMatchSearchRef.current = () => {
+      cancelFindMatch.mutate();
+    };
+  }, [cancelFindMatch]);
+
+  useEffect(() => {
+    const nextMatch = activeMatch.data;
+    if (
+      !isQueuedForNewMatch ||
+      !nextMatch ||
+      nextMatch.id === matchId ||
+      nextMatch.seats.length < 2 ||
+      (nextMatch.status !== 'SETUP' && nextMatch.status !== 'PLAYING')
+    ) {
+      return;
+    }
+
+    redirectToNewMatch(nextMatch.id);
+  }, [activeMatch.data, isQueuedForNewMatch, matchId, redirectToNewMatch]);
+
+  useEffect(() => {
+    if (!isQueuedForNewMatch) {
+      return undefined;
+    }
+
+    const interval = window.setInterval(() => {
+      void activeMatch.refetch();
+    }, 1_500);
+
+    return () => window.clearInterval(interval);
+  }, [activeMatch, isQueuedForNewMatch]);
+
+  useEffect(() => {
+    return () => {
+      if (shouldCancelNewMatchSearchOnUnmountRef.current && !redirectingNewMatchRef.current) {
+        cancelNewMatchSearchRef.current();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (state?.phase !== 'SETUP' || !setupEndsAt) {
@@ -357,6 +468,15 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     const timeout = window.setTimeout(() => setMovementOverlay(null), 980);
     return () => window.clearTimeout(timeout);
   }, [movementOverlay]);
+
+  useEffect(() => {
+    const container = chatScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }, [chatItems.length]);
 
   function leave() {
     setIsLeavingMatch(true);
@@ -631,24 +751,45 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     });
   }
 
+  function sendChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = chatDraft.trim();
+    if (!message) {
+      return;
+    }
+
+    sendMatchChat.mutate(message, {
+      onSuccess: () => setChatDraft(''),
+      onError: showMutationError,
+    });
+  }
+
   function newMatch() {
     if (!match.data) {
       router.push('/lobby');
       return;
     }
 
-    createMatch.mutate(
+    findMatch.mutate(
+      { preparationSeconds: match.data.preparationSeconds },
       {
-        name: `${match.data.name} rematch`,
-        visibility: match.data.visibility,
-        mode: match.data.mode,
-        preparationSeconds: match.data.preparationSeconds,
-      },
-      {
-        onSuccess: (createdMatch) => router.push(`/matches/${createdMatch.id}`),
+        onSuccess: (response) => {
+          if (response.match?.id && response.match.seats.length >= 2) {
+            redirectToNewMatch(response.match.id);
+            return;
+          }
+
+          setIsQueuedForNewMatch(response.status === 'QUEUED');
+        },
         onError: showMutationError,
       },
     );
+  }
+
+  function cancelNewMatchSearch() {
+    cancelFindMatch.mutate(undefined, {
+      onSettled: () => setIsQueuedForNewMatch(false),
+    });
   }
 
   function rematch() {
@@ -670,6 +811,8 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const topSeat = viewerSide ? seats.find((seat) => seat.side !== viewerSide) : seats[0];
   const isGameOver = state?.phase === 'GAME_OVER';
   const pendingRematchMatchId = match.data?.pendingRematchMatchId ?? null;
+  const endedByLeave = Boolean(match.data?.resignedSide);
+  const newMatchSearchOpen = findMatch.isPending || isQueuedForNewMatch;
   const isRematchRequester = Boolean(
     bottomSeat &&
     match.data?.rematchRequestedByUserId &&
@@ -916,19 +1059,29 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                   <div className="border-b border-white/10 px-4 py-3">
                     <h2 className="font-black">Chat</h2>
                   </div>
-                  <div className="flex-1 space-y-4 overflow-auto p-4 text-sm">
-                    <ChatBubble
-                      name="System"
-                      time="now"
-                      message={chatStatusText(state, socket.connected)}
-                    />
+                  <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
+                    <div className="flex min-h-full flex-col justify-end gap-3">
+                      {chatItems.map((item) =>
+                        item.kind === 'message' ? (
+                          <ChatBubble
+                            key={item.id}
+                            name={item.displayName}
+                            time={formatChatTime(item.occurredAt)}
+                            message={item.message}
+                          />
+                        ) : (
+                          <ChatEventRow key={item.id} message={item.message} />
+                        ),
+                      )}
+                    </div>
                   </div>
                   {isGameOver ? (
                     <GameOverActions
                       pendingRematchMatchId={pendingRematchMatchId}
                       canAcceptRematch={Boolean(match.data?.viewerCanAcceptRematch)}
                       isRematchRequester={isRematchRequester}
-                      createPending={createMatch.isPending}
+                      rematchUnavailable={endedByLeave}
+                      newMatchPending={findMatch.isPending || isQueuedForNewMatch}
                       requestPending={requestRematch.isPending}
                       acceptPending={acceptRematch.isPending}
                       onNewMatch={newMatch}
@@ -936,19 +1089,27 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       onAcceptRematch={acceptRequestedRematch}
                     />
                   ) : (
-                    <div className="flex gap-2 border-t border-white/10 p-3">
+                    <form className="flex gap-2 border-t border-white/10 p-3" onSubmit={sendChat}>
                       <div className="relative flex-1">
                         <Input
-                          disabled
+                          value={chatDraft}
+                          maxLength={500}
+                          disabled={sendMatchChat.isPending}
+                          onChange={(event) => setChatDraft(event.target.value)}
                           placeholder="Type a message..."
                           className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
                         />
                         <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
                       </div>
-                      <Button disabled variant="ghost" className="shrink-0 text-white/45">
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        className="shrink-0 text-white/70 hover:bg-white/10 hover:text-white"
+                        disabled={sendMatchChat.isPending || !chatDraft.trim()}
+                      >
                         <Send className="size-5" />
                       </Button>
-                    </div>
+                    </form>
                   )}
                 </section>
               </>
@@ -963,20 +1124,29 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
               variant="outline"
               className="border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
             >
-              <Link href="/lobby">
+              <Link
+                href="/lobby"
+                onClick={() => {
+                  if (isGameOver) {
+                    clearMatchChat.mutate(matchId);
+                  }
+                }}
+              >
                 <ArrowLeft className="mr-2 size-4" />
                 Lobby
               </Link>
             </Button>
-            <Button
-              className="border border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
-              disabled={leaveMatch.isPending || !match.data}
-              onClick={() => setLeaveDialogOpen(true)}
-              type="button"
-            >
-              <DoorOpen className="mr-2 size-4" />
-              Leave Match
-            </Button>
+            {!(isGameOver && endedByLeave) ? (
+              <Button
+                className="border border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
+                disabled={leaveMatch.isPending || !match.data}
+                onClick={() => setLeaveDialogOpen(true)}
+                type="button"
+              >
+                <DoorOpen className="mr-2 size-4" />
+                Leave Match
+              </Button>
+            ) : null}
           </div>
           <div className="flex overflow-hidden rounded-md border border-white/10">
             <Button variant="ghost" className="rounded-none text-white/60 hover:bg-white/10">
@@ -1027,6 +1197,22 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
         </DialogContent>
       </Dialog>
 
+      <FindingMatchDialog
+        cancelPending={cancelFindMatch.isPending}
+        isSearching={newMatchSearchOpen}
+        onCancel={cancelNewMatchSearch}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelNewMatchSearch();
+          }
+        }}
+        onPreparationSecondsChange={() => undefined}
+        onStart={newMatch}
+        open={newMatchSearchOpen}
+        preparationSeconds={String(match.data?.preparationSeconds ?? 60)}
+        searchPending={findMatch.isPending}
+      />
+
       <Dialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
         <DialogContent className="border-white/15 bg-[#181b15] text-[#f6f0e4] sm:max-w-lg">
           <DialogHeader>
@@ -1068,7 +1254,8 @@ function GameOverActions({
   pendingRematchMatchId,
   canAcceptRematch,
   isRematchRequester,
-  createPending,
+  rematchUnavailable,
+  newMatchPending,
   requestPending,
   acceptPending,
   onNewMatch,
@@ -1078,18 +1265,19 @@ function GameOverActions({
   pendingRematchMatchId: string | null;
   canAcceptRematch: boolean;
   isRematchRequester: boolean;
-  createPending: boolean;
+  rematchUnavailable: boolean;
+  newMatchPending: boolean;
   requestPending: boolean;
   acceptPending: boolean;
   onNewMatch: () => void;
   onRematch: () => void;
   onAcceptRematch: () => void;
 }) {
-  const busy = createPending || requestPending || acceptPending;
+  const busy = newMatchPending || requestPending || acceptPending;
 
   return (
     <div className="space-y-2 border-t border-white/10 p-3">
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn('grid gap-2', rematchUnavailable ? 'grid-cols-1' : 'grid-cols-2')}>
         <Button
           type="button"
           variant="outline"
@@ -1097,32 +1285,34 @@ function GameOverActions({
           disabled={busy}
           onClick={onNewMatch}
         >
-          {createPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+          {newMatchPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
           New Match
         </Button>
-        {pendingRematchMatchId ? (
-          <Button
-            type="button"
-            className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
-            disabled={busy || !canAcceptRematch}
-            onClick={onAcceptRematch}
-          >
-            {acceptPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            {canAcceptRematch ? 'Accept Match' : isRematchRequester ? 'Waiting' : 'Requested'}
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
-            disabled={busy}
-            onClick={onRematch}
-          >
-            {requestPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Rematch
-          </Button>
-        )}
+        {!rematchUnavailable ? (
+          pendingRematchMatchId ? (
+            <Button
+              type="button"
+              className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+              disabled={busy || !canAcceptRematch}
+              onClick={onAcceptRematch}
+            >
+              {acceptPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              {canAcceptRematch ? 'Accept Match' : isRematchRequester ? 'Waiting' : 'Requested'}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+              disabled={busy}
+              onClick={onRematch}
+            >
+              {requestPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Rematch
+            </Button>
+          )
+        ) : null}
       </div>
-      {isRematchRequester && pendingRematchMatchId ? (
+      {!rematchUnavailable && isRematchRequester && pendingRematchMatchId ? (
         <p className="text-xs text-white/50">Waiting for the other player to accept.</p>
       ) : null}
     </div>
@@ -1367,16 +1557,26 @@ function PieceFace({
 
 function ChatBubble({ name, time, message }: { name: string; time: string; message: string }) {
   return (
-    <div className="flex gap-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#d6a348] text-sm font-black text-[#121212]">
-        {name[0]}
+    <div className="flex items-start gap-2.5">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#d6a348] text-xs font-black text-[#121212]">
+        {name.trim()[0]?.toUpperCase() ?? 'P'}
       </div>
-      <div className="min-w-0">
-        <p className="font-black">
-          {name} <span className="ml-2 text-xs font-medium text-white/45">{time}</span>
+      <div className="min-w-0 rounded-md bg-black/20 px-2.5 py-2">
+        <p className="text-xs font-black leading-none">
+          {name} <span className="ml-2 font-medium text-white/40">{time}</span>
         </p>
-        <p className="mt-1 text-white/75">{message}</p>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5 text-white/75">
+          {message}
+        </p>
       </div>
+    </div>
+  );
+}
+
+function ChatEventRow({ message }: { message: string }) {
+  return (
+    <div className="mx-auto max-w-[85%] rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-center text-[11px] font-semibold text-white/45">
+      {message}
     </div>
   );
 }
@@ -1540,22 +1740,72 @@ function formatSetupTime(milliseconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function chatStatusText(state: GameState | undefined, connected: boolean) {
-  if (!state) {
-    return 'Loading match room...';
+function chatItemFromSocketEvent(event: MatchSocketEvent): ChatTimelineItem[] {
+  if (event.type === 'CHAT_MESSAGE' && 'message' in event) {
+    return [chatItemFromChatMessage(event)];
   }
 
-  if (state.phase === 'SETUP') {
-    return 'Setup phase is active. Arrange your pieces and mark ready.';
+  if (event.type === 'REMATCH_REQUESTED') {
+    return [
+      {
+        kind: 'event',
+        id: `${event.type}-${event.occurredAt}`,
+        message: 'Rematch offered.',
+      },
+    ];
   }
 
-  if (state.phase === 'PLAYING') {
-    return connected ? 'Realtime connection is active.' : 'Realtime connection is idle.';
+  if (event.type === 'REMATCH_ACCEPTED') {
+    return [
+      {
+        kind: 'event',
+        id: `${event.type}-${event.occurredAt}`,
+        message: 'Rematch accepted.',
+      },
+    ];
   }
 
-  return state.winnerSide
-    ? `${state.winnerSide} won by ${state.winReason ?? 'game over'}.`
-    : `Game over${state.drawReason ? ` by ${state.drawReason}` : ''}.`;
+  if (event.type === 'PLAYER_LEFT') {
+    return [
+      {
+        kind: 'event',
+        id: `${event.type}-${event.occurredAt}`,
+        message: 'A player left the match.',
+      },
+    ];
+  }
+
+  return [];
+}
+
+function chatItemFromChatMessage(message: MatchChatMessage): ChatTimelineItem {
+  const id =
+    message.id ?? `${message.type}-${message.subject}-${message.occurredAt}-${message.message}`;
+
+  if (message.type === 'CHAT_EVENT') {
+    return {
+      kind: 'event',
+      id,
+      message: message.message,
+    };
+  }
+
+  return {
+    kind: 'message',
+    id,
+    displayName: message.displayName || 'Player',
+    message: message.message,
+    occurredAt: message.occurredAt,
+  };
+}
+
+function formatChatTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function showMutationError(error: unknown) {
