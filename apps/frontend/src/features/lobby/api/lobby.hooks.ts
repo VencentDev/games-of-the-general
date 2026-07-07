@@ -50,6 +50,7 @@ export type MatchmakingResponse = {
   status: MatchmakingStatus;
   match: MatchSummary | null;
   enqueuedAt: string | null;
+  preparationSeconds: number | null;
 };
 
 export type GameModel = {
@@ -197,6 +198,10 @@ export type CreateMatchInput = {
   preparationSeconds: number;
 };
 
+export type FindMatchInput = {
+  preparationSeconds: number;
+};
+
 export const lobbyKeys = {
   activeMatch: ['lobby', 'active-match'] as const,
   publicMatches: ['lobby', 'public-matches'] as const,
@@ -322,9 +327,10 @@ export function useFindMatch() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () =>
+    mutationFn: (input: FindMatchInput) =>
       clientApi<MatchmakingResponse>(session?.accessToken, '/api/v1/matches/find', {
         method: 'POST',
+        body: JSON.stringify(input),
       }),
     onSuccess: (response) => {
       if (response.match) {
@@ -417,12 +423,21 @@ export function useLeaveMatch() {
       clientApi<MatchSummary>(session?.accessToken, `/api/v1/matches/${matchId}/seat`, {
         method: 'DELETE',
       }),
-    onSuccess: (_match, matchId) => {
+    onSuccess: async (_match, matchId) => {
+      await queryClient.cancelQueries({ queryKey: lobbyKeys.match(matchId) });
+      await queryClient.cancelQueries({ queryKey: lobbyKeys.state(matchId) });
+      await queryClient.cancelQueries({ queryKey: lobbyKeys.moves(matchId) });
+      await queryClient.cancelQueries({
+        queryKey: ['lobby', 'match', matchId, 'legal-moves'],
+      });
       queryClient.setQueryData(lobbyKeys.activeMatch, null);
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.activeMatch });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.publicMatches });
       void queryClient.invalidateQueries({ queryKey: lobbyKeys.history });
-      void queryClient.invalidateQueries({ queryKey: lobbyKeys.match(matchId) });
+      queryClient.removeQueries({ queryKey: lobbyKeys.match(matchId) });
+      queryClient.removeQueries({ queryKey: lobbyKeys.state(matchId) });
+      queryClient.removeQueries({ queryKey: lobbyKeys.moves(matchId) });
+      queryClient.removeQueries({ queryKey: ['lobby', 'match', matchId, 'legal-moves'] });
     },
   });
 }
