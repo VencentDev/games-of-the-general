@@ -45,6 +45,9 @@ public class MatchmakingQueueEntry extends AuditableEntity {
   @Column(name = "match_id")
   private UUID matchId;
 
+  @Column(name = "preparation_seconds", nullable = false)
+  private Integer preparationSeconds;
+
   @Column(name = "enqueued_at", nullable = false)
   private Instant enqueuedAt;
 }

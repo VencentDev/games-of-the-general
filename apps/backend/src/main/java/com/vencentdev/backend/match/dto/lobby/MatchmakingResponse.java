@@ -3,4 +3,7 @@ package com.vencentdev.backend.match.dto.lobby;
 import java.time.Instant;
 
 public record MatchmakingResponse(
-    MatchmakingStatus status, MatchResponse match, Instant enqueuedAt) {}
+    MatchmakingStatus status,
+    MatchResponse match,
+    Instant enqueuedAt,
+    Integer preparationSeconds) {}

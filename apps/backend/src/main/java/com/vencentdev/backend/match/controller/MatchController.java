@@ -4,6 +4,7 @@ import com.vencentdev.backend.auth.AuthenticatedUser;
 import com.vencentdev.backend.auth.CurrentUser;
 import com.vencentdev.backend.match.dto.lobby.MatchCreateRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchResponse;
+import com.vencentdev.backend.match.dto.lobby.MatchmakingRequest;
 import com.vencentdev.backend.match.dto.lobby.MatchmakingResponse;
 import com.vencentdev.backend.match.service.MatchService;
 import com.vencentdev.backend.match.service.MatchmakingService;
@@ -59,8 +60,10 @@ public class MatchController {
   }
 
   @PostMapping("/find")
-  public MatchmakingResponse findMatch(@CurrentUser AuthenticatedUser user) {
-    return matchmakingService.findMatch(user);
+  public MatchmakingResponse findMatch(
+      @CurrentUser AuthenticatedUser user,
+      @Valid @RequestBody(required = false) MatchmakingRequest request) {
+    return matchmakingService.findMatch(user, request);
   }
 
   @DeleteMapping("/find/queue")

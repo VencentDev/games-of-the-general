@@ -52,25 +52,49 @@ class MatchmakingQueueRepositoryTest extends IntegrationTestBase {
     UUID newerUserId = createUser("queue-newer").getId();
     UUID cancelledUserId = createUser("queue-cancelled").getId();
 
-    queueRepository.save(waitingEntry(currentUserId, Instant.parse("2026-07-06T01:00:00Z")));
-    queueRepository.save(waitingEntry(newerUserId, Instant.parse("2026-07-06T01:03:00Z")));
-    queueRepository.save(waitingEntry(oldestUserId, Instant.parse("2026-07-06T01:02:00Z")));
+    queueRepository.save(waitingEntry(currentUserId, 60, Instant.parse("2026-07-06T01:00:00Z")));
+    queueRepository.save(waitingEntry(newerUserId, 60, Instant.parse("2026-07-06T01:03:00Z")));
+    queueRepository.save(waitingEntry(oldestUserId, 60, Instant.parse("2026-07-06T01:02:00Z")));
     queueRepository.save(
         MatchmakingQueueEntry.builder()
             .userId(cancelledUserId)
+            .preparationSeconds(60)
             .status(MatchmakingQueueStatus.CANCELLED)
             .enqueuedAt(Instant.parse("2026-07-06T00:30:00Z"))
             .build());
     queueRepository.flush();
 
-    assertThat(queueRepository.findOldestOtherWaitingForUpdate(currentUserId))
+    assertThat(queueRepository.findOldestOtherWaitingForUpdate(currentUserId, 60))
         .map(MatchmakingQueueEntry::getUserId)
         .contains(oldestUserId);
   }
 
+  @Test
+  void locksOldestOtherWaitingEntryWithSamePreparationTime() {
+    UUID currentUserId = createUser("queue-time-current").getId();
+    UUID olderDifferentTimeUserId = createUser("queue-time-different").getId();
+    UUID compatibleUserId = createUser("queue-time-compatible").getId();
+
+    queueRepository.save(waitingEntry(currentUserId, 60, Instant.parse("2026-07-06T01:00:00Z")));
+    queueRepository.save(
+        waitingEntry(olderDifferentTimeUserId, 90, Instant.parse("2026-07-06T01:01:00Z")));
+    queueRepository.save(waitingEntry(compatibleUserId, 60, Instant.parse("2026-07-06T01:02:00Z")));
+    queueRepository.flush();
+
+    assertThat(queueRepository.findOldestOtherWaitingForUpdate(currentUserId, 60))
+        .map(MatchmakingQueueEntry::getUserId)
+        .contains(compatibleUserId);
+  }
+
   private MatchmakingQueueEntry waitingEntry(UUID userId, Instant enqueuedAt) {
+    return waitingEntry(userId, 60, enqueuedAt);
+  }
+
+  private MatchmakingQueueEntry waitingEntry(
+      UUID userId, int preparationSeconds, Instant enqueuedAt) {
     return MatchmakingQueueEntry.builder()
         .userId(userId)
+        .preparationSeconds(preparationSeconds)
         .status(MatchmakingQueueStatus.WAITING)
         .enqueuedAt(enqueuedAt)
         .build();

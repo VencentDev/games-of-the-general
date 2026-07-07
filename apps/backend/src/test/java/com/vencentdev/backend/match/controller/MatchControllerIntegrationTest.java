@@ -208,11 +208,21 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   void findMatchQueuesFirstPlayerAndMatchesSecondPlayer() throws Exception {
     String firstBody =
         mockMvc
-            .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-first")))
+            .perform(
+                post("/api/v1/matches/find")
+                    .with(currentUser("matchmaking-first"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "preparationSeconds": 60
+                        }
+                        """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("QUEUED"))
             .andExpect(jsonPath("$.match").doesNotExist())
             .andExpect(jsonPath("$.enqueuedAt").exists())
+            .andExpect(jsonPath("$.preparationSeconds").value(60))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -220,18 +230,37 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
     String firstEnqueuedAt = jsonString(firstBody, "enqueuedAt");
 
     mockMvc
-        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-first")))
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-first"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 60
+                    }
+                    """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("QUEUED"))
         .andExpect(jsonPath("$.enqueuedAt").value(firstEnqueuedAt));
 
     String secondBody =
         mockMvc
-            .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-second")))
+            .perform(
+                post("/api/v1/matches/find")
+                    .with(currentUser("matchmaking-second"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "preparationSeconds": 60
+                        }
+                        """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("MATCHED"))
             .andExpect(jsonPath("$.match.status").value("SETUP"))
             .andExpect(jsonPath("$.match.visibility").value("PUBLIC"))
+            .andExpect(jsonPath("$.match.preparationSeconds").value(60))
             .andExpect(jsonPath("$.match.seats", hasSize(2)))
             .andExpect(jsonPath("$.match.seats[0].side").value("BLUE"))
             .andExpect(jsonPath("$.match.seats[1].side").value("RED"))
@@ -255,6 +284,85 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
         .andExpect(jsonPath("$.match.id").value(matchId));
 
     assertThatQueueCountIs(2);
+  }
+
+  @Test
+  void findMatchOnlyPairsPlayersWithSamePreparationTime() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-sixty-first"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 60
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"))
+        .andExpect(jsonPath("$.preparationSeconds").value(60));
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-ninety"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 90
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"))
+        .andExpect(jsonPath("$.preparationSeconds").value(90));
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-sixty-second"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 60
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("MATCHED"))
+        .andExpect(jsonPath("$.match.preparationSeconds").value(60));
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-ninety"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 90
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("QUEUED"))
+        .andExpect(jsonPath("$.preparationSeconds").value(90));
+  }
+
+  @Test
+  void findMatchRejectsUnsupportedPreparationTime() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-unsupported-time"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 30
+                    }
+                    """))
+        .andExpect(status().isBadRequest());
   }
 
   @Test
@@ -308,37 +416,41 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void findMatchReturnsExistingActiveMatchInsteadOfQueueing() throws Exception {
-    String body =
-        mockMvc
-            .perform(
-                post("/api/v1/matches")
-                    .with(currentUser("matchmaking-active"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(
-                        """
-                        {
-                          "name": "Active before queue",
-                          "visibility": "PUBLIC",
-                          "mode": "Classic hidden ranks",
-                          "preparationSeconds": 60
-                        }
-                        """))
-            .andExpect(status().isCreated())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-    String matchId = jsonString(body, "id");
+  void findMatchQueuesInsteadOfReturningWaitingSinglePlayerMatch() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/matches")
+                .with(currentUser("matchmaking-waiting"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "name": "Waiting table",
+                      "visibility": "PUBLIC",
+                      "mode": "Classic hidden ranks",
+                      "preparationSeconds": 60
+                    }
+                    """))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.status").value("WAITING"));
 
     mockMvc
-        .perform(post("/api/v1/matches/find").with(currentUser("matchmaking-active")))
+        .perform(
+            post("/api/v1/matches/find")
+                .with(currentUser("matchmaking-waiting"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "preparationSeconds": 60
+                    }
+                    """))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("ACTIVE"))
-        .andExpect(jsonPath("$.match.id").value(matchId))
-        .andExpect(jsonPath("$.enqueuedAt").doesNotExist());
+        .andExpect(jsonPath("$.status").value("QUEUED"))
+        .andExpect(jsonPath("$.match").doesNotExist())
+        .andExpect(jsonPath("$.preparationSeconds").value(60));
 
-    assertThatQueueCountIs(0);
+    assertThatQueueCountIs(1);
   }
 
   @Test
@@ -376,7 +488,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
                       "name": "Second table",
                       "visibility": "PRIVATE",
                       "mode": "Classic hidden ranks",
-                      "preparationSeconds": 30
+                      "preparationSeconds": 90
                     }
                     """))
         .andExpect(status().isCreated())
@@ -505,7 +617,7 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
                           "name": "Original table",
                           "visibility": "PRIVATE",
                           "mode": "Classic hidden ranks",
-                          "preparationSeconds": 30
+                          "preparationSeconds": 90
                         }
                         """))
             .andExpect(status().isCreated())

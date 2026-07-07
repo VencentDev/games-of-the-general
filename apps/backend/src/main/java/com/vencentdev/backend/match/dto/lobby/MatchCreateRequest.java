@@ -13,11 +13,8 @@ public record MatchCreateRequest(
     @NotBlank @Size(max = 80) String mode,
     @Min(0) int preparationSeconds) {
 
-  @AssertTrue(message = "preparationSeconds must be 0, 30, 60, or 90")
+  @AssertTrue(message = "preparationSeconds must be 0, 60, or 90")
   public boolean isPreparationSecondsSupported() {
-    return preparationSeconds == 0
-        || preparationSeconds == 30
-        || preparationSeconds == 60
-        || preparationSeconds == 90;
+    return preparationSeconds == 0 || preparationSeconds == 60 || preparationSeconds == 90;
   }
 }
