@@ -25,7 +25,7 @@ function SignupContent() {
 
 function SignupShell({ callbackUrl }: { callbackUrl?: string }) {
   return (
-    <main className="relative -mx-4 -my-6 flex min-h-[calc(100svh-3.5rem)] max-w-[100vw] items-center overflow-x-clip bg-[#f5f1e6] px-4 py-6 text-[#201b16] selection:bg-[#d7bd73]/40 dark:bg-[#11130f] dark:text-[#f6f0e4] md:py-8">
+    <main className="relative flex min-h-screen max-w-[100vw] items-center overflow-x-clip bg-[#f5f1e6] px-4 py-6 text-[#201b16] selection:bg-[#d7bd73]/40 dark:bg-[#11130f] dark:text-[#f6f0e4] md:py-8">
       <section className="relative z-10 mx-auto flex min-h-[560px] w-full max-w-[min(58rem,calc(100vw-2rem))] animate-float-in flex-col-reverse overflow-hidden rounded-xl border border-[#8a7b62]/25 bg-[#fbf8ef] shadow-2xl shadow-black/10 dark:border-white/10 dark:bg-[#181b15] md:flex-row">
         <div className="flex flex-1 items-center p-8 md:p-12">
           <form className="w-full space-y-6" onSubmit={(event) => event.preventDefault()}>

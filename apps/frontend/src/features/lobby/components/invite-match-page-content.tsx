@@ -25,7 +25,7 @@ export function InviteMatchPageContent({ inviteCode }: { inviteCode: string }) {
   }, [activeMatch.data?.id, router]);
 
   return (
-    <main className="-mx-4 -my-6 flex min-h-[calc(100svh-3.5rem)] items-center bg-[#f5f1e6] px-4 py-8 text-[#201b16] dark:bg-[#10130f] dark:text-[#f6f0e4]">
+    <main className="flex min-h-screen items-center bg-[#f5f1e6] px-4 py-8 text-[#201b16] dark:bg-[#10130f] dark:text-[#f6f0e4]">
       <section className="mx-auto w-full max-w-xl rounded-lg border border-[#8a7b62]/20 bg-[#fbf8ef] p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
         <Button asChild variant="ghost" className="mb-5 px-0">
           <Link href="/lobby">

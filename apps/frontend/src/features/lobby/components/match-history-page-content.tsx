@@ -12,7 +12,7 @@ export function MatchHistoryPageContent() {
   const matches = history.data ?? [];
 
   return (
-    <main className="-mx-4 -my-6 min-h-[calc(100svh-3.5rem)] bg-[#f5f1e6] px-4 py-6 text-[#201b16] dark:bg-[#10130f] dark:text-[#f6f0e4] md:px-8">
+    <main className="min-h-screen bg-[#f5f1e6] px-4 py-6 text-[#201b16] dark:bg-[#10130f] dark:text-[#f6f0e4] md:px-8">
       <section className="mx-auto max-w-7xl space-y-5">
         <div className="border-b border-[#8a7b62]/20 pb-5 dark:border-white/10">
           <Button asChild variant="ghost" className="mb-3 px-0">
