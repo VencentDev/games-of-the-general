@@ -3,7 +3,7 @@
 import { Client, type IMessage } from '@stomp/stompjs';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { lobbyKeys, type MatchSummary } from '@/features/lobby/api/lobby.hooks';
 
@@ -19,6 +19,14 @@ export type MatchSocketEvent =
       type: string;
       matchId: string;
       subject: string;
+      occurredAt: string;
+    }
+  | {
+      type: 'CHAT_MESSAGE';
+      matchId: string;
+      subject: string;
+      displayName: string;
+      message: string;
       occurredAt: string;
     };
 
@@ -76,7 +84,9 @@ export function useMatchSocket(matchId: string | null) {
           void queryClient.invalidateQueries({ queryKey: lobbyKeys.moves(event.matchId) });
         }
 
-        setEvents((current) => [event, ...current].slice(0, 20));
+        if (event.type !== 'PLAYER_PRESENT') {
+          setEvents((current) => [event, ...current].slice(0, 100));
+        }
       });
       client.publish({ destination: `/app/matches/${matchId}/presence`, body: '{}' });
     };
@@ -91,5 +101,20 @@ export function useMatchSocket(matchId: string | null) {
     };
   }, [client, matchId, queryClient]);
 
-  return { connected, events };
+  const sendChatMessage = useCallback(
+    (message: string) => {
+      if (!client || !matchId || !connected) {
+        return false;
+      }
+
+      client.publish({
+        destination: `/app/matches/${matchId}/chat`,
+        body: JSON.stringify({ message }),
+      });
+      return true;
+    },
+    [client, connected, matchId],
+  );
+
+  return { connected, events, sendChatMessage };
 }
