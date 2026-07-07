@@ -64,6 +64,7 @@ import {
   type BoardSquare,
   type GameState,
   type MatchSeat,
+  type MatchChatMessage,
   type MoveHistory,
   type PieceDefinition,
   type PieceInstance,
@@ -72,6 +73,7 @@ import {
   type SetupPieceInput,
   useActiveMatch,
   useCancelFindMatch,
+  useClearMatchChat,
   useFindMatch,
   useGameModel,
   useGameState,
@@ -80,9 +82,11 @@ import {
   useLegalMoves,
   useMarkReady,
   useMatch,
+  useMatchChat,
   useMoveHistory,
   useMovePiece,
   useRequestRematch,
+  useSendMatchChat,
   useUpdateSetup,
 } from '@/features/lobby/api/lobby.hooks';
 import { ApiError } from '@/lib/api';
@@ -133,6 +137,9 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const gameModel = useGameModel();
   const gameState = useGameState(matchId);
   const moveHistory = useMoveHistory(matchId);
+  const matchChat = useMatchChat(matchId);
+  const sendMatchChat = useSendMatchChat(matchId);
+  const clearMatchChat = useClearMatchChat();
   const leaveMatch = useLeaveMatch();
   const updateSetup = useUpdateSetup(matchId);
   const markReady = useMarkReady(matchId);
@@ -224,11 +231,16 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   }, [board, viewerSide]);
 
   const chatItems = useMemo(() => {
-    return socket.events
+    const storedItems = (matchChat.data ?? []).map(chatItemFromChatMessage);
+    const liveItems = socket.events
       .slice()
       .reverse()
       .flatMap((event) => chatItemFromSocketEvent(event));
-  }, [socket.events]);
+
+    return Array.from(
+      new Map([...storedItems, ...liveItems].map((item) => [item.id, item])).values(),
+    );
+  }, [matchChat.data, socket.events]);
 
   const legalTargets = useMemo(() => {
     return new Map(
@@ -280,10 +292,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
     (targetMatchId: string) => {
       redirectingNewMatchRef.current = true;
       shouldCancelNewMatchSearchOnUnmountRef.current = false;
+      if (match.data?.phase === 'GAME_OVER') {
+        clearMatchChat.mutate(matchId);
+      }
       setIsQueuedForNewMatch(false);
       router.replace(`/matches/${targetMatchId}`);
     },
-    [router],
+    [clearMatchChat, match.data?.phase, matchId, router],
   );
 
   useEffect(() => {
@@ -743,15 +758,10 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       return;
     }
 
-    const sent = socket.sendChatMessage(message);
-    if (!sent) {
-      toast.error('Chat is reconnecting', {
-        description: 'Wait for the realtime connection before sending a message.',
-      });
-      return;
-    }
-
-    setChatDraft('');
+    sendMatchChat.mutate(message, {
+      onSuccess: () => setChatDraft(''),
+      onError: showMutationError,
+    });
   }
 
   function newMatch() {
@@ -1084,7 +1094,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                         <Input
                           value={chatDraft}
                           maxLength={500}
-                          disabled={!socket.connected}
+                          disabled={sendMatchChat.isPending}
                           onChange={(event) => setChatDraft(event.target.value)}
                           placeholder="Type a message..."
                           className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
@@ -1095,7 +1105,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                         type="submit"
                         variant="ghost"
                         className="shrink-0 text-white/70 hover:bg-white/10 hover:text-white"
-                        disabled={!socket.connected || !chatDraft.trim()}
+                        disabled={sendMatchChat.isPending || !chatDraft.trim()}
                       >
                         <Send className="size-5" />
                       </Button>
@@ -1114,7 +1124,14 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
               variant="outline"
               className="border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
             >
-              <Link href="/lobby">
+              <Link
+                href="/lobby"
+                onClick={() => {
+                  if (isGameOver) {
+                    clearMatchChat.mutate(matchId);
+                  }
+                }}
+              >
                 <ArrowLeft className="mr-2 size-4" />
                 Lobby
               </Link>
@@ -1725,15 +1742,7 @@ function formatSetupTime(milliseconds: number) {
 
 function chatItemFromSocketEvent(event: MatchSocketEvent): ChatTimelineItem[] {
   if (event.type === 'CHAT_MESSAGE' && 'message' in event) {
-    return [
-      {
-        kind: 'message',
-        id: `${event.type}-${event.subject}-${event.occurredAt}`,
-        displayName: event.displayName || 'Player',
-        message: event.message,
-        occurredAt: event.occurredAt,
-      },
-    ];
+    return [chatItemFromChatMessage(event)];
   }
 
   if (event.type === 'REMATCH_REQUESTED') {
@@ -1767,6 +1776,27 @@ function chatItemFromSocketEvent(event: MatchSocketEvent): ChatTimelineItem[] {
   }
 
   return [];
+}
+
+function chatItemFromChatMessage(message: MatchChatMessage): ChatTimelineItem {
+  const id =
+    message.id ?? `${message.type}-${message.subject}-${message.occurredAt}-${message.message}`;
+
+  if (message.type === 'CHAT_EVENT') {
+    return {
+      kind: 'event',
+      id,
+      message: message.message,
+    };
+  }
+
+  return {
+    kind: 'message',
+    id,
+    displayName: message.displayName || 'Player',
+    message: message.message,
+    occurredAt: message.occurredAt,
+  };
 }
 
 function formatChatTime(value: string) {

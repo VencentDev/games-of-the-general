@@ -43,7 +43,11 @@ public class MatchRealtimeService {
     messagingTemplate.convertAndSend(
         matchTopic(matchId),
         new MatchChatMessage(
-            "CHAT_MESSAGE", matchId, subject, displayName, message, Instant.now()));
+            null, "CHAT_MESSAGE", matchId, subject, displayName, message, Instant.now()));
+  }
+
+  public void publishChatMessage(MatchChatMessage message) {
+    messagingTemplate.convertAndSend(matchTopic(message.matchId()), message);
   }
 
   private String matchTopic(UUID matchId) {

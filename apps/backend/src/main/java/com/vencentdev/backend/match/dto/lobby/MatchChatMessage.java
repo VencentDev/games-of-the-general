@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record MatchChatMessage(
+    UUID id,
     String type,
     UUID matchId,
     String subject,

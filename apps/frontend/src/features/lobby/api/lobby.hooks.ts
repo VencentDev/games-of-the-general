@@ -53,6 +53,16 @@ export type MatchmakingResponse = {
   preparationSeconds: number | null;
 };
 
+export type MatchChatMessage = {
+  id: string | null;
+  type: 'CHAT_MESSAGE' | 'CHAT_EVENT';
+  matchId: string;
+  subject: string;
+  displayName: string;
+  message: string;
+  occurredAt: string;
+};
+
 export type GameModel = {
   rows: number;
   columns: number;
@@ -210,6 +220,7 @@ export const lobbyKeys = {
   gameModel: ['lobby', 'game-model'] as const,
   settings: ['lobby', 'settings'] as const,
   match: (matchId: string) => ['lobby', 'match', matchId] as const,
+  chat: (matchId: string) => ['lobby', 'match', matchId, 'chat'] as const,
   state: (matchId: string) => ['lobby', 'match', matchId, 'state'] as const,
   moves: (matchId: string) => ['lobby', 'match', matchId, 'moves'] as const,
   legalMoves: (matchId: string, pieceId: string | null) =>
@@ -268,6 +279,51 @@ export function useMatch(matchId: string) {
     enabled: !!session?.accessToken && !!matchId,
     refetchInterval: (query) => (query.state.data?.phase === 'GAME_OVER' ? false : 2_500),
     refetchIntervalInBackground: true,
+  });
+}
+
+export function useMatchChat(matchId: string) {
+  const { data: session } = useSession();
+
+  return useQuery({
+    queryKey: lobbyKeys.chat(matchId),
+    queryFn: () =>
+      clientApi<MatchChatMessage[]>(session?.accessToken, `/api/v1/matches/${matchId}/chat`),
+    enabled: !!session?.accessToken && !!matchId,
+  });
+}
+
+export function useClearMatchChat() {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (matchId: string) =>
+      clientApi<void>(session?.accessToken, `/api/v1/matches/${matchId}/chat`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (_, matchId) => {
+      queryClient.setQueryData(lobbyKeys.chat(matchId), []);
+    },
+  });
+}
+
+export function useSendMatchChat(matchId: string) {
+  const { data: session } = useSession();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (message: string) =>
+      clientApi<MatchChatMessage>(session?.accessToken, `/api/v1/matches/${matchId}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    onSuccess: (message) => {
+      queryClient.setQueryData<MatchChatMessage[]>(lobbyKeys.chat(matchId), (current) => [
+        ...(current ?? []),
+        message,
+      ]);
+    },
   });
 }
 

@@ -22,7 +22,8 @@ export type MatchSocketEvent =
       occurredAt: string;
     }
   | {
-      type: 'CHAT_MESSAGE';
+      id: string | null;
+      type: 'CHAT_MESSAGE' | 'CHAT_EVENT';
       matchId: string;
       subject: string;
       displayName: string;
@@ -109,6 +110,9 @@ export function useMatchSocket(matchId: string | null) {
 
       client.publish({
         destination: `/app/matches/${matchId}/chat`,
+        headers: {
+          'content-type': 'application/json',
+        },
         body: JSON.stringify({ message }),
       });
       return true;

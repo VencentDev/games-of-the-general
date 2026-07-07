@@ -604,6 +604,53 @@ class MatchControllerIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
+  void seatedPlayerCanSendAndReloadChatMessages() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/matches")
+                    .with(currentUser("chat-host"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Chat table",
+                          "visibility": "PUBLIC",
+                          "mode": "Classic hidden ranks",
+                          "preparationSeconds": 60
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String matchId = jsonString(body, "id");
+
+    mockMvc
+        .perform(
+            post("/api/v1/matches/{matchId}/chat", matchId)
+                .with(currentUser("chat-host"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "message": "  Hello commander  "
+                    }
+                    """))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.type").value("CHAT_MESSAGE"))
+        .andExpect(jsonPath("$.displayName").value("chat-host"))
+        .andExpect(jsonPath("$.message").value("Hello commander"));
+
+    mockMvc
+        .perform(get("/api/v1/matches/{matchId}/chat", matchId).with(currentUser("chat-host")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$", hasSize(1)))
+        .andExpect(jsonPath("$[0].message").value("Hello commander"));
+  }
+
+  @Test
   void finishedMatchCanRequestAndAcceptRematch() throws Exception {
     String body =
         mockMvc
