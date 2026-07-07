@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 
-import { Navbar } from '@/components/navbar';
 import { Providers } from '@/components/providers';
 import { ThemeProvider } from '@/components/theme-provider';
 import { siteConfig } from '@/config/site';
@@ -25,10 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${jetBrainsMono.variable} font-display`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <Providers>
-            <Navbar />
-            <div className="container mx-auto py-6">{children}</div>
-          </Providers>
+          <Providers>{children}</Providers>
         </ThemeProvider>
       </body>
     </html>

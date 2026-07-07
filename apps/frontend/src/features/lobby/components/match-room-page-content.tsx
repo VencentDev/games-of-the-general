@@ -26,8 +26,11 @@ import {
   Settings,
   Smile,
   Volume2,
+  VolumeX,
 } from 'lucide-react';
 
+import { SignOutButton } from '@/components/sign-out-button';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -153,6 +156,8 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [isQueuedForNewMatch, setIsQueuedForNewMatch] = useState(false);
   const [isLeavingMatch, setIsLeavingMatch] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
@@ -237,9 +242,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       .reverse()
       .flatMap((event) => chatItemFromSocketEvent(event));
 
-    return Array.from(
-      new Map([...storedItems, ...liveItems].map((item) => [item.id, item])).values(),
-    );
+    return dedupeChatTimelineItems([...storedItems, ...liveItems]);
   }, [matchChat.data, socket.events]);
 
   const legalTargets = useMemo(() => {
@@ -820,11 +823,11 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
   );
 
   return (
-    <main className="-mx-4 -my-6 min-h-[calc(100svh-3.5rem)] bg-[#111315] p-3 text-[#ece8df] md:p-4">
-      <section className="mx-auto grid min-h-[calc(100svh-5.5rem)] max-w-[104rem] grid-rows-[1fr_auto] rounded-lg border border-white/15 bg-[radial-gradient(circle_at_center,#202326_0%,#111416_55%,#0b0d0e_100%)] shadow-2xl">
-        <div className="grid gap-3 p-4 xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <section className="flex min-w-0 items-center justify-center">
-            <div className="w-full max-w-[64rem] rounded-lg border border-white/10 bg-white/[0.06] p-3 shadow-xl">
+    <main className="h-screen overflow-hidden bg-[radial-gradient(circle_at_58%_42%,rgba(238,123,81,0.16),transparent_34%),linear-gradient(90deg,#ffffff_0%,#faf7ef_48%,#f1e7d3_100%)] p-2 text-[#16130d] dark:bg-[radial-gradient(circle_at_58%_42%,rgba(162,95,47,0.36),transparent_34%),linear-gradient(90deg,#070b05_0%,#121407_45%,#201309_100%)] dark:text-[#fffaf0] md:p-3">
+      <section className="mx-auto grid h-full max-w-[104rem] min-h-0 grid-rows-[minmax(0,1fr)_auto] rounded-lg border border-[#ded7c8] bg-white/72 shadow-2xl shadow-black/10 backdrop-blur-sm dark:border-[#3b321e] dark:bg-[#11150c]/82 dark:shadow-black/50">
+        <div className="grid min-h-0 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <section className="flex min-h-0 min-w-0 items-center justify-center">
+            <div className="w-full max-w-[min(58rem,calc((100svh-16rem)*1.125))] rounded-lg border border-[#d8c8a8] bg-white/88 p-2 shadow-xl shadow-black/10 md:p-3 dark:border-[#5b5036] dark:bg-[#1b140d]/72 dark:shadow-black/35">
               {topSeat ? (
                 <PlayerBar
                   seat={topSeat}
@@ -837,7 +840,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                   setupRemainingMs={setupRemainingMs}
                 />
               ) : (
-                <div className="mb-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/55">
+                <div className="mb-3 rounded-md border border-[#ded7c8] bg-white/65 px-3 py-2 text-sm text-[#6c6559] dark:border-[#5b5036] dark:bg-[#11150c]/75 dark:text-[#c9c0aa]">
                   Loading opponent...
                 </div>
               )}
@@ -845,13 +848,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
               <div className="grid grid-cols-[0.875rem_1fr] gap-2">
                 <div
                   className={cn(
-                    'rounded-full border border-white/10 transition-colors',
+                    'rounded-full border border-[#d8c8a8] transition-colors dark:border-[#5b5036]',
                     turnRailTone(state?.currentTurn, viewerSide),
                   )}
                   title={turnRailLabel(state?.currentTurn, viewerSide, state?.phase)}
                 />
                 <div className="relative">
-                  <div className="grid aspect-[9/8] grid-cols-9 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden rounded-md border border-[#6b4d2f] bg-[#e5be84] shadow-inner">
+                  <div className="grid aspect-[9/8] grid-cols-9 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden rounded-md border border-[#c6a46b] bg-[#ead7af] shadow-inner dark:border-black dark:bg-[#6b572d]">
                     {displayedBoard.map((square) => {
                       const key = positionKey(square.position.row, square.position.column);
                       const target = legalTargets.get(key);
@@ -868,13 +871,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                           key={key}
                           type="button"
                           className={cn(
-                            'relative flex min-h-0 min-w-0 items-center justify-center border border-[#8d6842]/70 bg-[#e7c795] outline-none transition focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#f6e09f]',
-                            isOwnSetupSquare && 'bg-[#edcf9c]',
-                            square.piece && 'hover:bg-[#f0d7ad]',
-                            !square.piece && 'hover:bg-[#dfb979]',
-                            target && !target.attack && 'bg-[#8b985d] hover:bg-[#98a86a]',
-                            target?.attack && 'bg-[#a44536] hover:bg-[#b94f3f]',
-                            isSelected && 'z-10 ring-4 ring-[#f6e09f]',
+                            'relative flex min-h-0 min-w-0 items-center justify-center border border-[#a47738]/24 bg-[#f0ddaf] outline-none transition focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#ee7b51] dark:border-black dark:bg-[#7b6335] dark:focus-visible:ring-[#e8d18b]',
+                            isOwnSetupSquare && 'bg-[#f6e5bd] dark:bg-[#8a7041]',
+                            square.piece && 'hover:bg-[#f7e8c6] dark:hover:bg-[#937847]',
+                            !square.piece && 'hover:bg-[#e6c989] dark:hover:bg-[#725a2e]',
+                            target && !target.attack && 'bg-[#9fb66d] hover:bg-[#adbf78]',
+                            target?.attack && 'bg-[#c95a48] hover:bg-[#d96653]',
+                            isSelected && 'z-10 ring-4 ring-[#ee7b51] dark:ring-[#e8d18b]',
                           )}
                           disabled={
                             busy ||
@@ -908,7 +911,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                               !square.piece && 'border-transparent bg-transparent shadow-none',
                               square.piece &&
                                 !square.piece.visible &&
-                                'h-[58%] w-[58%] rounded-full border-[#111315] bg-[#202326] text-[#f7ecd8]',
+                                'h-[58%] w-[58%] rounded-full border-[#11130f] bg-[#11130f] text-white dark:border-[#e8d18b]/35 dark:bg-[#11150c] dark:text-[#f7ecd8]',
                             )}
                           >
                             <PieceFace
@@ -959,12 +962,14 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
             </div>
           </section>
 
-          <aside className="flex min-h-[38rem] min-w-0 flex-col gap-3">
+          <aside className="flex min-h-0 min-w-0 flex-col gap-3">
             {state?.phase === 'SETUP' ? (
-              <section className="flex min-h-0 flex-col rounded-lg border border-white/15 bg-white/[0.04]">
-                <div className="border-b border-white/10 px-4 py-3">
+              <section className="flex min-h-0 flex-col rounded-lg border border-[#d8c8a8] bg-white/82 shadow-sm dark:border-[#5b5036] dark:bg-[#11150c]/72">
+                <div className="border-b border-[#ded7c8] px-4 py-3 dark:border-[#5b5036]">
                   <h2 className="font-black">Preparation</h2>
-                  <p className="mt-1 text-xs text-white/55">{activePlacedCount}/21 placed</p>
+                  <p className="mt-1 text-xs text-[#6c6559] dark:text-[#c9c0aa]">
+                    {activePlacedCount}/21 placed
+                  </p>
                 </div>
                 <div className="space-y-3 p-3">
                   <div className="grid grid-cols-2 gap-2">
@@ -972,7 +977,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
+                      className="h-8 border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
                       disabled={!canEditSetup || updateSetup.isPending}
                       onClick={autoFillSetup}
                     >
@@ -983,7 +988,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-8 border-white/15 bg-white/5 text-white hover:bg-white/10"
+                      className="h-8 border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
                       disabled={!selectedPiece || !canEditSetup || updateSetup.isPending}
                       onClick={unplaceSelectedPiece}
                     >
@@ -993,7 +998,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                   <Button
                     type="button"
                     size="sm"
-                    className="h-8 w-full bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+                    className="h-8 w-full bg-[#11130f] text-white hover:bg-[#2a2d22] dark:bg-[#ee7b51] dark:hover:bg-[#ff8b5e]"
                     disabled={!canMarkReady || markReady.isPending}
                     onClick={readySetup}
                   >
@@ -1005,7 +1010,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                     {ownReady ? 'Ready' : 'Ready'}
                   </Button>
                 </div>
-                <div className="grid max-h-[31rem] grid-cols-4 gap-2 overflow-auto border-t border-white/10 p-3">
+                <div className="grid max-h-[31rem] grid-cols-4 gap-2 overflow-auto border-t border-[#ded7c8] p-3 dark:border-[#5b5036]">
                   {(state?.ownPieces ?? []).map((piece) => (
                     <SetupPieceButton
                       key={piece.id}
@@ -1022,27 +1027,31 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
               </section>
             ) : (
               <>
-                <section className="min-h-0 rounded-lg border border-white/15 bg-white/[0.04]">
-                  <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                <section className="min-h-0 rounded-lg border border-[#d8c8a8] bg-white/82 shadow-sm dark:border-[#5b5036] dark:bg-[#11150c]/72">
+                  <div className="flex items-center justify-between border-b border-[#ded7c8] px-4 py-3 dark:border-[#5b5036]">
                     <h2 className="font-black">Move History</h2>
-                    {busy ? <Loader2 className="size-4 animate-spin text-white/60" /> : null}
+                    {busy ? (
+                      <Loader2 className="size-4 animate-spin text-[#6c6559] dark:text-[#c9c0aa]" />
+                    ) : null}
                   </div>
                   <div className="max-h-[18rem] overflow-auto">
                     {lastMoves.length > 0 ? (
                       lastMoves.map((move) => (
                         <div
                           key={`${move.moveNumber}-${move.pieceId}`}
-                          className="grid grid-cols-[2.5rem_1fr] gap-3 px-4 py-3 text-sm odd:bg-white/[0.03]"
+                          className="grid grid-cols-[2.5rem_1fr] gap-3 px-4 py-3 text-sm odd:bg-[#f7f1e4] dark:odd:bg-[#1b140d]/60"
                         >
-                          <span className="font-semibold text-white/70">{move.moveNumber}</span>
+                          <span className="font-semibold text-[#5d5648] dark:text-[#c9c0aa]">
+                            {move.moveNumber}
+                          </span>
                           <span
                             className={cn(
                               'truncate',
                               move.actingSide === viewerSide
                                 ? move.actingSide === 'RED'
-                                  ? 'text-[#f36b5c]'
-                                  : 'text-[#9bc8ff]'
-                                : 'text-white/55',
+                                  ? 'text-[#a83228]'
+                                  : 'text-[#1f5d8f]'
+                                : 'text-[#6c6559] dark:text-[#c9c0aa]',
                             )}
                           >
                             {moveHistoryLabel(move, viewerSide, pieceDefinitions)}
@@ -1050,13 +1059,15 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                         </div>
                       ))
                     ) : (
-                      <p className="px-4 py-5 text-sm text-white/55">No moves yet.</p>
+                      <p className="px-4 py-5 text-sm text-[#6c6559] dark:text-[#c9c0aa]">
+                        No moves yet.
+                      </p>
                     )}
                   </div>
                 </section>
 
-                <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-white/15 bg-white/[0.04]">
-                  <div className="border-b border-white/10 px-4 py-3">
+                <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-[#d8c8a8] bg-white/82 shadow-sm dark:border-[#5b5036] dark:bg-[#11150c]/72">
+                  <div className="border-b border-[#ded7c8] px-4 py-3 dark:border-[#5b5036]">
                     <h2 className="font-black">Chat</h2>
                   </div>
                   <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
@@ -1089,7 +1100,10 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                       onAcceptRematch={acceptRequestedRematch}
                     />
                   ) : (
-                    <form className="flex gap-2 border-t border-white/10 p-3" onSubmit={sendChat}>
+                    <form
+                      className="flex gap-2 border-t border-[#ded7c8] p-3 dark:border-[#5b5036]"
+                      onSubmit={sendChat}
+                    >
                       <div className="relative flex-1">
                         <Input
                           value={chatDraft}
@@ -1097,14 +1111,14 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
                           disabled={sendMatchChat.isPending}
                           onChange={(event) => setChatDraft(event.target.value)}
                           placeholder="Type a message..."
-                          className="border-white/15 bg-black/20 pr-9 text-white placeholder:text-white/35"
+                          className="border-[#d8c8a8] bg-white/70 pr-9 text-[#16130d] placeholder:text-[#6c6559]/55 dark:border-[#5b5036] dark:bg-[#1b140d]/60 dark:text-[#fffaf0] dark:placeholder:text-[#c9c0aa]/55"
                         />
-                        <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-white/45" />
+                        <Smile className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#6c6559] dark:text-[#c9c0aa]" />
                       </div>
                       <Button
                         type="submit"
                         variant="ghost"
-                        className="shrink-0 text-white/70 hover:bg-white/10 hover:text-white"
+                        className="shrink-0 text-[#16130d] hover:bg-[#11130f] hover:text-white dark:text-[#c9c0aa] dark:hover:bg-[#191d10] dark:hover:text-white"
                         disabled={sendMatchChat.isPending || !chatDraft.trim()}
                       >
                         <Send className="size-5" />
@@ -1117,12 +1131,12 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
           </aside>
         </div>
 
-        <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
+        <footer className="flex items-center justify-between border-t border-[#ded7c8] px-4 py-3 dark:border-[#5b5036]">
           <div className="flex gap-2">
             <Button
               asChild
               variant="outline"
-              className="border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
+              className="border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
             >
               <Link
                 href="/lobby"
@@ -1138,7 +1152,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
             </Button>
             {!(isGameOver && endedByLeave) ? (
               <Button
-                className="border border-white/15 bg-white/[0.03] text-white hover:bg-white/10"
+                className="border border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
                 disabled={leaveMatch.isPending || !match.data}
                 onClick={() => setLeaveDialogOpen(true)}
                 type="button"
@@ -1148,13 +1162,24 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
               </Button>
             ) : null}
           </div>
-          <div className="flex overflow-hidden rounded-md border border-white/10">
-            <Button variant="ghost" className="rounded-none text-white/60 hover:bg-white/10">
-              <Volume2 className="size-5" />
+          <div className="flex overflow-hidden rounded-md border border-[#d8c8a8] bg-white/60 dark:border-[#5b5036] dark:bg-[#0e1209]/80">
+            <Button
+              type="button"
+              variant="ghost"
+              className="rounded-none text-[#5d5648] hover:bg-[#11130f] hover:text-white dark:text-[#c9c0aa] dark:hover:bg-[#191d10] dark:hover:text-white"
+              aria-label={soundEnabled ? 'Mute sound' : 'Enable sound'}
+              title={soundEnabled ? 'Mute sound' : 'Enable sound'}
+              onClick={() => setSoundEnabled((enabled) => !enabled)}
+            >
+              {soundEnabled ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
             </Button>
             <Button
+              type="button"
               variant="ghost"
-              className="rounded-none border-l border-white/10 text-white/60 hover:bg-white/10"
+              className="rounded-none border-l border-[#d8c8a8] text-[#5d5648] hover:bg-[#11130f] hover:text-white dark:border-[#5b5036] dark:text-[#c9c0aa] dark:hover:bg-[#191d10] dark:hover:text-white"
+              aria-label="Open settings"
+              title="Open settings"
+              onClick={() => setSettingsOpen(true)}
             >
               <Settings className="size-5" />
             </Button>
@@ -1163,22 +1188,26 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       </section>
 
       <Dialog open={Boolean(shouldShowInvite && inviteOpen)} onOpenChange={setInviteOpen}>
-        <DialogContent className="border-white/15 bg-[#181b15] text-[#f6f0e4] sm:max-w-lg">
+        <DialogContent className="border-[#d8c8a8] bg-white text-[#16130d] sm:max-w-lg dark:border-[#5b5036] dark:bg-[#11150c] dark:text-[#fffaf0]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-2xl font-black tracking-normal">
-              <Lock className="size-5 text-[#d6a348]" />
+              <Lock className="size-5 text-[#ee7b51] dark:text-[#d6a348]" />
               Private invite link
             </DialogTitle>
-            <DialogDescription className="text-sm leading-6 text-white/65">
+            <DialogDescription className="text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
               Send this link to the other player so they can join this private match.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
-            <Input readOnly value={inviteLink} className="border-white/15 bg-white/5 text-xs" />
+            <Input
+              readOnly
+              value={inviteLink}
+              className="border-[#d8c8a8] bg-[#f7f1e4] text-xs dark:border-[#5b5036] dark:bg-[#1b140d]/60 dark:text-[#fffaf0]"
+            />
             <Button
               type="button"
               variant="outline"
-              className="shrink-0 border-white/15 bg-white/5"
+              className="shrink-0 border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
               onClick={copyInviteLink}
             >
               <Copy className="mr-2 size-4" />
@@ -1188,7 +1217,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
           <DialogFooter>
             <Button
               type="button"
-              className="bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+              className="bg-[#11130f] text-white hover:bg-[#2a2d22] dark:bg-[#ee7b51] dark:hover:bg-[#ff8b5e]"
               onClick={() => setInviteOpen(false)}
             >
               Done
@@ -1196,6 +1225,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MatchSettingsDialog
+        open={settingsOpen}
+        soundEnabled={soundEnabled}
+        onOpenChange={setSettingsOpen}
+        onSoundEnabledChange={setSoundEnabled}
+      />
 
       <FindingMatchDialog
         cancelPending={cancelFindMatch.isPending}
@@ -1214,13 +1250,13 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
       />
 
       <Dialog open={leaveDialogOpen} onOpenChange={setLeaveDialogOpen}>
-        <DialogContent className="border-white/15 bg-[#181b15] text-[#f6f0e4] sm:max-w-lg">
+        <DialogContent className="border-[#d8c8a8] bg-white text-[#16130d] sm:max-w-lg dark:border-[#5b5036] dark:bg-[#11150c] dark:text-[#fffaf0]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-2xl font-black tracking-normal">
-              <DoorOpen className="size-5 text-[#d6a348]" />
+              <DoorOpen className="size-5 text-[#ee7b51] dark:text-[#d6a348]" />
               Leave match?
             </DialogTitle>
-            <DialogDescription className="text-sm leading-6 text-white/65">
+            <DialogDescription className="text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
               Are you sure you want to leave this match?
             </DialogDescription>
           </DialogHeader>
@@ -1228,7 +1264,7 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
             <Button
               type="button"
               variant="outline"
-              className="border-white/15 bg-white/5 text-white hover:bg-white/10"
+              className="border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
               disabled={leaveMatch.isPending}
               onClick={() => setLeaveDialogOpen(false)}
             >
@@ -1247,6 +1283,82 @@ export function MatchRoomPageContent({ matchId }: { matchId: string }) {
         </DialogContent>
       </Dialog>
     </main>
+  );
+}
+
+function MatchSettingsDialog({
+  onOpenChange,
+  onSoundEnabledChange,
+  open,
+  soundEnabled,
+}: {
+  onOpenChange: (open: boolean) => void;
+  onSoundEnabledChange: (enabled: boolean) => void;
+  open: boolean;
+  soundEnabled: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-[#d8c8a8] bg-white text-[#16130d] sm:max-w-lg dark:border-[#5b5036] dark:bg-[#11150c] dark:text-[#fffaf0]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-2xl font-black tracking-normal">
+            <Settings className="size-5 text-[#ee7b51] dark:text-[#d6a348]" />
+            Settings
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+            Adjust match preferences and account controls.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-black">Theme</p>
+                <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+                  Toggle between light and dark mode.
+                </p>
+              </div>
+              <ThemeToggle />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-black">Sound</p>
+                <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+                  {soundEnabled ? 'Sound effects are enabled.' : 'Sound effects are muted.'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
+                onClick={() => onSoundEnabledChange(!soundEnabled)}
+              >
+                {soundEnabled ? (
+                  <Volume2 className="mr-2 size-4" />
+                ) : (
+                  <VolumeX className="mr-2 size-4" />
+                )}
+                {soundEnabled ? 'On' : 'Muted'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60">
+            <p className="text-sm font-black">Account</p>
+            <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+              Sign out and return to the login screen.
+            </p>
+            <div className="mt-3">
+              <SignOutButton />
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1276,12 +1388,12 @@ function GameOverActions({
   const busy = newMatchPending || requestPending || acceptPending;
 
   return (
-    <div className="space-y-2 border-t border-white/10 p-3">
+    <div className="space-y-2 border-t border-[#ded7c8] p-3 dark:border-[#5b5036]">
       <div className={cn('grid gap-2', rematchUnavailable ? 'grid-cols-1' : 'grid-cols-2')}>
         <Button
           type="button"
           variant="outline"
-          className="h-9 border-white/15 bg-white/5 text-white hover:bg-white/10"
+          className="h-9 border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] hover:text-white dark:border-[#5b5036] dark:bg-[#0e1209]/80 dark:text-[#fff6df] dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#191d10]"
           disabled={busy}
           onClick={onNewMatch}
         >
@@ -1292,7 +1404,7 @@ function GameOverActions({
           pendingRematchMatchId ? (
             <Button
               type="button"
-              className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+              className="h-9 bg-[#11130f] text-white hover:bg-[#2a2d22] dark:bg-[#ee7b51] dark:hover:bg-[#ff8b5e]"
               disabled={busy || !canAcceptRematch}
               onClick={onAcceptRematch}
             >
@@ -1302,7 +1414,7 @@ function GameOverActions({
           ) : (
             <Button
               type="button"
-              className="h-9 bg-[#d6a348] text-[#121212] hover:bg-[#e2b45b]"
+              className="h-9 bg-[#11130f] text-white hover:bg-[#2a2d22] dark:bg-[#ee7b51] dark:hover:bg-[#ff8b5e]"
               disabled={busy}
               onClick={onRematch}
             >
@@ -1313,7 +1425,9 @@ function GameOverActions({
         ) : null}
       </div>
       {!rematchUnavailable && isRematchRequester && pendingRematchMatchId ? (
-        <p className="text-xs text-white/50">Waiting for the other player to accept.</p>
+        <p className="text-xs text-[#6c6559] dark:text-[#c9c0aa]">
+          Waiting for the other player to accept.
+        </p>
       ) : null}
     </div>
   );
@@ -1339,30 +1453,32 @@ function PlayerBar({
   const summary = summarizeCaptured(capturedPieces, definitions).slice(0, 4);
 
   return (
-    <section className="mb-3 flex min-w-0 items-center gap-3 rounded-md border border-white/10 bg-black/20 px-3 py-2">
+    <section className="mb-3 flex min-w-0 items-center gap-3 rounded-md border border-[#11130f]/20 bg-[#11130f] px-3 py-2 text-white dark:border-[#5b5036] dark:bg-[#11150c]/72 dark:text-[#fffaf0]">
       <div className="flex min-w-0 shrink-0 items-center gap-2">
         <div
           className={cn(
-            'relative flex size-9 items-center justify-center rounded-md border border-white/10 text-sm font-black shadow-lg',
-            seat.side === 'RED' ? 'bg-[#6f241d] text-[#ffd7c8]' : 'bg-[#1e3e65] text-[#d9ecff]',
+            'relative flex size-9 items-center justify-center rounded-md border text-sm font-black shadow-lg',
+            seat.side === 'RED'
+              ? 'border-[#c95a48] bg-[#a83228] text-white dark:border-[#c95a48]/70 dark:bg-[#6f241d] dark:text-[#ffd7c8]'
+              : 'border-[#4f91c4] bg-[#1f5d8f] text-white dark:border-[#4f91c4]/70 dark:bg-[#1e3e65] dark:text-[#d9ecff]',
           )}
         >
           {seat.side[0]}
           <span
             className={cn(
-              'absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-[#111315]',
-              active ? 'bg-[#79d15f]' : 'bg-white/35',
+              'absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border border-white dark:border-[#11150c]',
+              active ? 'bg-[#6fae4f]' : 'bg-[#b7ad99] dark:bg-[#6f674f]',
             )}
           />
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-black">{displayName}</p>
-          <p className="text-xs text-white/55">
+          <p className="text-xs text-white/65 dark:text-[#c9c0aa]">
             {seat.side} {seat.ready ? 'ready' : 'not ready'}
           </p>
         </div>
         {setupRemainingMs !== null ? (
-          <div className="ml-1 rounded-sm bg-white px-2 py-1 font-mono text-sm font-black tabular-nums text-[#141414] shadow">
+          <div className="ml-1 rounded-sm bg-[#11130f] px-2 py-1 font-mono text-sm font-black tabular-nums text-white shadow dark:bg-[#e8d18b] dark:text-[#11130f]">
             {formatSetupTime(setupRemainingMs)}
           </div>
         ) : null}
@@ -1379,7 +1495,7 @@ function PlayerBar({
                     ? seat.side === 'RED'
                       ? 'rounded-sm border-[#d46b5d] bg-[#7e2c23] text-[#ffd7c8]'
                       : 'rounded-sm border-[#6ea1d6] bg-[#244b78] text-[#d9ecff]'
-                    : 'border-white/15 bg-[#050607] text-transparent',
+                    : 'border-[#11130f]/20 bg-[#11130f] text-transparent dark:border-[#5b5036] dark:bg-[#0e1209]',
                 )}
                 aria-label={isViewer ? pieceAbbreviation(item.type, definitions) : 'Hidden piece'}
               >
@@ -1391,11 +1507,11 @@ function PlayerBar({
                   />
                 ) : null}
               </div>
-              <p className="text-xs text-white/70">{item.count}</p>
+              <p className="text-xs text-white/75 dark:text-[#c9c0aa]">{item.count}</p>
             </div>
           ))
         ) : (
-          <p className="text-xs text-white/40">0 lost</p>
+          <p className="text-xs text-white/55 dark:text-[#9f987f]">0 lost</p>
         )}
       </div>
     </section>
@@ -1427,9 +1543,9 @@ function SetupPieceButton({
       className={cn(
         'flex aspect-[4/3] min-w-0 items-center justify-center rounded-sm border text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6e09f]',
         piece.status === 'ACTIVE'
-          ? 'border-white/10 bg-white/10 text-white/50'
-          : 'border-[#d6a348] bg-[#27211a] text-[#f6d38b] hover:bg-[#352917]',
-        selected && 'ring-2 ring-[#f6e09f]',
+          ? 'border-[#d8c8a8] bg-[#f7f1e4] text-[#6c6559] dark:border-[#5b5036] dark:bg-[#11150c]/72 dark:text-[#c9c0aa]'
+          : 'border-[#11130f] bg-[#11130f] text-white hover:bg-[#2a2d22] dark:border-[#d6a348] dark:bg-[#1b140d] dark:text-[#f6d38b] dark:hover:bg-[#271d11]',
+        selected && 'ring-2 ring-[#ee7b51] dark:ring-[#f6e09f]',
         piece.status === 'CAPTURED' && 'opacity-35',
         isDisabled && 'cursor-not-allowed opacity-45',
       )}
@@ -1509,7 +1625,8 @@ function MoveAnimationOverlay({
         className={cn(
           'got-move-ghost absolute flex items-center justify-center rounded-sm border-2 text-[clamp(0.6rem,1.35vw,1.05rem)] font-black shadow-2xl',
           pieceTone(move.actingSide),
-          !visible && 'rounded-full border-[#111315] bg-[#202326] text-[#f7ecd8]',
+          !visible &&
+            'rounded-full border-[#11130f] bg-[#11130f] text-white dark:border-[#e8d18b]/35 dark:bg-[#11150c] dark:text-[#f7ecd8]',
         )}
         style={
           {
@@ -1558,14 +1675,14 @@ function PieceFace({
 function ChatBubble({ name, time, message }: { name: string; time: string; message: string }) {
   return (
     <div className="flex items-start gap-2.5">
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#d6a348] text-xs font-black text-[#121212]">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#11130f] text-xs font-black text-white dark:bg-[#ee7b51] dark:text-white">
         {name.trim()[0]?.toUpperCase() ?? 'P'}
       </div>
-      <div className="min-w-0 rounded-md bg-black/20 px-2.5 py-2">
+      <div className="min-w-0 rounded-md bg-[#f7f1e4] px-2.5 py-2 dark:bg-[#1b140d]/60">
         <p className="text-xs font-black leading-none">
-          {name} <span className="ml-2 font-medium text-white/40">{time}</span>
+          {name} <span className="ml-2 font-medium text-[#6c6559] dark:text-[#9f987f]">{time}</span>
         </p>
-        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5 text-white/75">
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5 text-[#3d372e] dark:text-[#f6f0e4]">
           {message}
         </p>
       </div>
@@ -1575,10 +1692,24 @@ function ChatBubble({ name, time, message }: { name: string; time: string; messa
 
 function ChatEventRow({ message }: { message: string }) {
   return (
-    <div className="mx-auto max-w-[85%] rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-center text-[11px] font-semibold text-white/45">
+    <div className="mx-auto max-w-[85%] rounded-full border border-[#d8c8a8] bg-[#f7f1e4]/70 px-3 py-1 text-center text-[11px] font-semibold text-[#6c6559] dark:border-[#ee7b51]/35 dark:bg-[#11130f] dark:text-[#f6f0e4]">
       {message}
     </div>
   );
+}
+
+function dedupeChatTimelineItems(items: ChatTimelineItem[]) {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    const key = item.kind === 'event' ? `event:${item.message}` : `message:${item.id}`;
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 function positionKey(row: number, column: number) {
@@ -1620,11 +1751,11 @@ function isSetupRow(row: number, side: PlayerSide) {
 
 function pieceTone(side: PlayerSide | undefined) {
   if (side === 'RED') {
-    return 'border-[#7b241b] bg-[#a83228] text-[#ffd7c8]';
+    return 'border-[#c95a48] bg-[#a83228] text-white dark:border-[#7b241b] dark:bg-[#a83228] dark:text-[#ffd7c8]';
   }
 
   if (side === 'BLUE') {
-    return 'border-[#152e4d] bg-[#203f66] text-[#d9ecff]';
+    return 'border-[#4f91c4] bg-[#1f5d8f] text-white dark:border-[#152e4d] dark:bg-[#203f66] dark:text-[#d9ecff]';
   }
 
   return '';
@@ -1709,12 +1840,12 @@ function turnRailTone(
   viewerSide: PlayerSide | undefined,
 ) {
   if (!currentTurn || !viewerSide) {
-    return 'bg-white/20';
+    return 'bg-[#d8c8a8] dark:bg-[#5b5036]';
   }
 
   return currentTurn === 'RED'
-    ? 'bg-[#a83228] shadow-[0_0_18px_rgba(168,50,40,0.55)]'
-    : 'bg-[#203f66] shadow-[0_0_18px_rgba(32,63,102,0.55)]';
+    ? 'bg-[#a83228] shadow-[0_0_18px_rgba(168,50,40,0.35)] dark:shadow-[0_0_18px_rgba(168,50,40,0.55)]'
+    : 'bg-[#1f5d8f] shadow-[0_0_18px_rgba(31,93,143,0.35)] dark:bg-[#203f66] dark:shadow-[0_0_18px_rgba(32,63,102,0.55)]';
 }
 
 function turnRailLabel(
