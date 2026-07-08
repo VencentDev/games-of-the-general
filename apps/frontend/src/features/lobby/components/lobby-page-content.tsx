@@ -1,11 +1,12 @@
 'use client';
 
-import { History, Plus, Search, Settings, Shield } from 'lucide-react';
+import { ArrowLeft, History, Mail, Plus, Save, Search, Settings, Shield, User } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { signOut, useSession } from 'next-auth/react';
+import type { FormEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useMe, useUpdateMe } from '@/features/auth/session/api/me.hooks';
 import {
   useActiveMatch,
   useCancelFindMatch,
@@ -404,6 +407,7 @@ function SettingsDialog({
   open: boolean;
   settings?: { challengeReveal: string; invitePrivacy: string; reconnectSeconds: number };
 }) {
+  const [view, setView] = useState<'settings' | 'account'>('settings');
   const rows = settings
     ? [
         ['Challenge reveal', settingLabel(settings.challengeReveal)],
@@ -416,48 +420,202 @@ function SettingsDialog({
         ['Reconnect window', 'Loading settings...'],
       ];
 
+  function changeOpen(nextOpen: boolean) {
+    if (!nextOpen) {
+      setView('settings');
+    }
+
+    onOpenChange(nextOpen);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent className="border-[#d8c8a8] bg-white text-[#16130d] dark:border-[#5b5036] dark:bg-[#11150c] dark:text-[#fffaf0]">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-black tracking-normal">Settings</DialogTitle>
-          <DialogDescription className="text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
-            Current lobby defaults for match visibility and reconnect behavior.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-black">Appearance</p>
-                <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
-                  Switch between light, dark, and system theme.
-                </p>
-              </div>
-              <ThemeToggle />
-            </div>
-          </div>
-          {rows.map(([title, body]) => (
-            <div
-              key={title}
-              className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60"
-            >
-              <p className="text-sm font-black">{title}</p>
-              <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">{body}</p>
-            </div>
-          ))}
-          <div className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60">
-            <p className="text-sm font-black">Account</p>
-            <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
-              Leave this session and return to sign in.
-            </p>
-            <div className="mt-3">
-              <SignOutButton />
-            </div>
-          </div>
-        </div>
+        {view === 'settings' ? (
+          <SettingsOverview rows={rows} onAccountClick={() => setView('account')} />
+        ) : (
+          <AccountSettingsView onBack={() => setView('settings')} />
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SettingsOverview({
+  onAccountClick,
+  rows,
+}: {
+  onAccountClick: () => void;
+  rows: string[][];
+}) {
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="text-2xl font-black tracking-normal">Settings</DialogTitle>
+        <DialogDescription className="text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+          Current lobby defaults for match visibility and reconnect behavior.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-black">Appearance</p>
+              <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+                Switch between light, dark, and system theme.
+              </p>
+            </div>
+            <ThemeToggle />
+          </div>
+        </div>
+        {rows.map(([title, body]) => (
+          <div
+            key={title}
+            className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 dark:border-[#5b5036] dark:bg-[#1b140d]/60"
+          >
+            <p className="text-sm font-black">{title}</p>
+            <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">{body}</p>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-4 text-left transition hover:border-[#ee7b51]/70 hover:bg-[#fff8eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ee7b51] dark:border-[#5b5036] dark:bg-[#1b140d]/60 dark:hover:border-[#e8d18b]/70 dark:hover:bg-[#231a10]"
+          onClick={onAccountClick}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-black">Account</p>
+              <p className="mt-1 text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+                Review your profile and update your display name.
+              </p>
+            </div>
+            <User className="size-5 shrink-0 text-[#ee7b51]" aria-hidden="true" />
+          </div>
+        </button>
+      </div>
+    </>
+  );
+}
+
+function AccountSettingsView({ onBack }: { onBack: () => void }) {
+  const { data: session } = useSession();
+  const me = useMe();
+  const updateMe = useUpdateMe();
+  const currentDisplayName = me.data?.displayName ?? session?.user?.name ?? '';
+  const email = me.data?.email ?? session?.user?.email ?? 'No email available';
+  const profileImage = session?.user?.image;
+  const [displayName, setDisplayName] = useState(currentDisplayName);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDisplayName(currentDisplayName);
+  }, [currentDisplayName]);
+
+  const trimmedDisplayName = displayName.trim();
+  const unchanged = trimmedDisplayName === (me.data?.displayName ?? '');
+  const saveDisabled = updateMe.isPending || me.isLoading || unchanged;
+
+  function saveDisplayName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavedMessage(null);
+
+    updateMe.mutate(
+      { displayName: trimmedDisplayName },
+      {
+        onSuccess: (updatedMe) => {
+          setDisplayName(updatedMe.displayName ?? '');
+          setSavedMessage('Display name updated.');
+        },
+      },
+    );
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <div className="mb-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-2 text-[#6c6559] hover:text-[#16130d] dark:text-[#c9c0aa] dark:hover:text-[#fffaf0]"
+            onClick={onBack}
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back
+          </Button>
+        </div>
+        <DialogTitle className="text-2xl font-black tracking-normal">Account</DialogTitle>
+        <DialogDescription className="text-sm leading-6 text-[#6c6559] dark:text-[#c9c0aa]">
+          Review your profile details and update your public display name.
+        </DialogDescription>
+      </DialogHeader>
+
+      <form className="flex flex-col gap-4" onSubmit={saveDisplayName}>
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-[#d8c8a8] bg-[#f7f1e4]/70 p-5 text-center dark:border-[#5b5036] dark:bg-[#1b140d]/60">
+          <div
+            className="grid size-20 place-items-center overflow-hidden rounded-full border border-[#d8c8a8] bg-[#11130f] bg-cover bg-center text-xl font-black text-white dark:border-[#5b5036]"
+            style={profileImage ? { backgroundImage: `url(${profileImage})` } : undefined}
+          >
+            {profileImage ? null : <span>{profileInitials(currentDisplayName, email)}</span>}
+          </div>
+          <div>
+            <p className="text-base font-black">{currentDisplayName || 'Player'}</p>
+            <p className="mt-1 flex items-center justify-center gap-2 text-sm text-[#6c6559] dark:text-[#c9c0aa]">
+              <Mail className="size-4" aria-hidden="true" />
+              {email}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="display-name">Display name</Label>
+          <Input
+            id="display-name"
+            maxLength={120}
+            value={displayName}
+            disabled={me.isLoading || updateMe.isPending}
+            onChange={(event) => {
+              setDisplayName(event.target.value);
+              setSavedMessage(null);
+            }}
+          />
+          <p className="text-xs leading-5 text-[#6c6559] dark:text-[#c9c0aa]">
+            This name appears in your game profile and match activity.
+          </p>
+        </div>
+
+        {updateMe.error ? (
+          <p className="rounded-md border border-[#8f2f24]/25 bg-[#fff3df] px-3 py-2 text-sm text-[#8f2f24] dark:border-[#f29a7f]/30 dark:bg-[#8f2f24]/15 dark:text-[#f29a7f]">
+            Could not update display name. Try again.
+          </p>
+        ) : null}
+
+        {savedMessage ? (
+          <p className="rounded-md border border-[#2f6d3a]/25 bg-[#eff8ed] px-3 py-2 text-sm text-[#2f6d3a] dark:border-[#9ad68f]/30 dark:bg-[#2f6d3a]/15 dark:text-[#9ad68f]">
+            {savedMessage}
+          </p>
+        ) : null}
+
+        <Button
+          type="submit"
+          className="w-full gap-2 bg-[#11130f] text-white hover:bg-[#2a2d22] dark:bg-[#ee7b51] dark:hover:bg-[#ff8b5e]"
+          disabled={saveDisabled}
+        >
+          <Save className="size-4" aria-hidden="true" />
+          {updateMe.isPending ? 'Saving...' : 'Save display name'}
+        </Button>
+
+        <Button
+          type="button"
+          variant="destructive"
+          className="w-full gap-2 bg-[#b42318] text-white hover:bg-[#8f1d14]"
+          onClick={() => void signOut({ redirectTo: '/login' })}
+        >
+          Sign out
+        </Button>
+      </form>
+    </>
   );
 }
 
@@ -467,4 +625,18 @@ function settingLabel(value: string) {
     .split('_')
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function profileInitials(displayName: string, email: string) {
+  const source = displayName || email;
+  const parts = source.replace(/@.*/, '').split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return 'P';
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
 }
