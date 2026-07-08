@@ -34,6 +34,8 @@ import { FindingMatchDialog, PreparationTimeOptions } from './find-match-dialog'
 
 export function LobbyPageContent() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const me = useMe();
   const activeMatch = useActiveMatch();
   const cancelFindMatch = useCancelFindMatch();
   const createMatch = useCreateMatch();
@@ -157,6 +159,9 @@ export function LobbyPageContent() {
   }
 
   const isSearching = findMatch.isPending || isQueued;
+  const currentDisplayName = me.data?.displayName ?? session?.user?.name ?? '';
+  const email = me.data?.email ?? session?.user?.email ?? 'No email available';
+  const profileImage = session?.user?.image;
 
   return (
     <main className="h-screen overflow-hidden bg-[radial-gradient(circle_at_58%_42%,rgba(238,123,81,0.16),transparent_34%),linear-gradient(90deg,#ffffff_0%,#faf7ef_48%,#f1e7d3_100%)] p-2 text-[#16130d] dark:bg-[radial-gradient(circle_at_58%_42%,rgba(162,95,47,0.36),transparent_34%),linear-gradient(90deg,#070b05_0%,#121407_45%,#201309_100%)] dark:text-[#fffaf0] md:p-3">
@@ -164,6 +169,19 @@ export function LobbyPageContent() {
         <RulesBoard model={gameModel.data} activePlayers={activePlayers} />
 
         <aside className="flex min-h-0 flex-col justify-center gap-3 rounded-lg border border-[#d8c8a8] bg-white/82 p-3 shadow-sm dark:border-[#5b5036] dark:bg-[#1b140d]/72">
+          <div className="flex items-center gap-3 px-1 pb-2">
+            <div
+              className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-[#d8c8a8] bg-[#11130f] bg-cover bg-center text-sm font-black text-white dark:border-[#5b5036]"
+              style={profileImage ? { backgroundImage: `url(${profileImage})` } : undefined}
+              aria-hidden="true"
+            >
+              {profileImage ? null : <span>{profileInitials(currentDisplayName, email)}</span>}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-base font-black">{currentDisplayName || 'Player'}</p>
+              <p className="mt-0.5 truncate text-sm text-[#6c6559] dark:text-[#c9c0aa]">{email}</p>
+            </div>
+          </div>
           <div className="border-b border-[#ded7c8] pb-3 dark:border-[#5b5036]">
             <p className="font-mono text-[10px] font-black uppercase tracking-[0.18em] text-[#ee7b51]">
               Command panel
